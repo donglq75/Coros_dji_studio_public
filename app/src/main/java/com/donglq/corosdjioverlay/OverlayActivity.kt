@@ -429,6 +429,13 @@ private fun SyncHome(activity: OverlayActivity) {
         "sans-serif-condensed" -> FontFamily(android.graphics.Typeface.create("sans-serif-condensed", android.graphics.Typeface.NORMAL))
         else -> FontFamily.SansSerif
     }
+    val orientationSummary = videos.groupingBy { video ->
+        when {
+            video.info.rotationDegrees != 0 -> "${video.info.rotationDegrees}°"
+            (video.info.height ?: 0) > (video.info.width ?: 0) -> "portrait"
+            else -> "landscape"
+        }
+    }.eachCount().entries.joinToString(" · ") { "${it.value} ${it.key}" }.ifBlank { "chưa đọc được" }
 
     Column(Modifier.fillMaxSize().statusBarsPadding().background(Color(0xFF0B1F14)).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 10.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -445,6 +452,8 @@ private fun SyncHome(activity: OverlayActivity) {
                     Column(Modifier.weight(1f)) {
                         Text("${videos.size} video đã chọn", fontSize = 19.sp, fontWeight = FontWeight.Bold)
                         if (specText.isNotBlank()) Text(specText, color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
+                        if (videos.isNotEmpty()) Text("Orientation từng clip: $orientationSummary",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                     }
                     OutlinedButton(onClick = { videoPicker.launch(arrayOf("video/*")) }) { Text("Chọn video") }
                 }
