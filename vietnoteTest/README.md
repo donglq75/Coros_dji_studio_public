@@ -17,3 +17,8 @@ The report is intended for side-by-side comparison with VietASR, especially Engl
 Model: [VietNote-Zipformer-78M-Streaming](https://huggingface.co/Kaisye/VietNote-Zipformer-78M-Streaming), by Kaisye. The app downloads model weights at runtime and does not bundle them in the APK. The model card currently specifies CC BY-NC-SA 4.0 for weights; use is for non-commercial evaluation unless the model author grants other rights. See the model card and accompanying notice/license before redistribution or commercial use.
 
 Runtime: [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), Apache-2.0.
+
+
+## Offline INT8 comparison build (0.2.0)
+
+This branch uses the model files under `offline/int8/` (about 88 MB) with sherpa-onnx `OfflineRecognizer`. It processes each complete clip rather than feeding streaming chunks. The APK has a separate Android application ID (`com.corosdjistudio.vietnotetest.offline`) so it can be installed beside the Streaming test app. Output is saved as `vietnote-offline-comparison.txt`.
