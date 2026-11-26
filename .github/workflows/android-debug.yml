@@ -2,7 +2,7 @@ name: Android Debug APK # feature builds publish versioned test releases
 
 on:
   push:
-    branches: [ main, feature/subtitle-mask-merge-resume ]
+    branches: [ main, feature/subtitle-mask-merge-resume, feature/per-clip-orientation-overlay ]
   workflow_dispatch:
 
 permissions:
@@ -52,15 +52,15 @@ jobs:
           unzip -Z1 "$APK" | grep '^lib/arm64-v8a/libonnxruntime.so$'
           unzip -Z1 "$APK" | grep '^lib/arm64-v8a/libvietasr.so$'
           test "$(unzip -Z1 "$APK" | grep -c '^lib/arm64-v8a/libonnxruntime.so$')" -eq 1
-          cp "$APK" app/build/outputs/apk/debug/COROS-DJI-Studio-1.0.78-rotation-metadata-cleared.apk
+          cp "$APK" app/build/outputs/apk/debug/COROS-DJI-Studio-1.0.79-per-clip-orientation.apk
       - name: Publish subtitle and resumable merge test APK to isolated GitHub Release
-        if: github.ref == 'refs/heads/feature/subtitle-mask-merge-resume'
+        if: github.ref == 'refs/heads/feature/per-clip-orientation-overlay'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: rotation-metadata-cleared-v1.0.78
-          name: COROS DJI Studio 1.0.78 - Rotation Metadata Cleared (Feature Test)
+          tag_name: per-clip-orientation-v1.0.79
+          name: COROS DJI Studio 1.0.79 - Per-Clip Orientation (Feature Test)
           prerelease: true
           make_latest: false
-          files: app/build/outputs/apk/debug/COROS-DJI-Studio-1.0.78-rotation-metadata-cleared.apk
+          files: app/build/outputs/apk/debug/COROS-DJI-Studio-1.0.79-per-clip-orientation.apk
           fail_on_unmatched_files: true
           overwrite_files: true
