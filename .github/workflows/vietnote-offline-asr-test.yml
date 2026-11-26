@@ -1,0 +1,89 @@
+name: VietNote Offline INT8 ASR Test APK
+
+on:
+  push:
+    branches: [ feature/vietnote-offline-int8-test ]
+    paths:
+      - 'vietnoteTest/**'
+      - 'settings.gradle.kts'
+      - '.github/workflows/vietnote-offline-asr-test.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: vietnote-offline-asr-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Verify VietNote Offline INT8 model assets
+        run: |
+          BASE=https://huggingface.co/Kaisye/VietNote-Zipformer-78M-Streaming/resolve/main
+          for FILE in offline/int8/encoder.int8.onnx offline/int8/decoder.int8.onnx offline/int8/joiner.int8.onnx tokens.txt; do
+            echo "Checking $FILE"
+            curl -fIL --retry 3 "$BASE/$FILE"
+          done
+
+      - name: Download isolated sherpa-onnx Android runtime (static ONNX Runtime)
+        run: |
+          mkdir -p vietnoteTest/libs
+          curl -fL --retry 3 \
+            https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.3/sherpa-onnx-static-link-onnxruntime-2.0.3.aar \
+            -o vietnoteTest/libs/sherpa-onnx-2.0.3-static-link-onnxruntime.aar
+          test -s vietnoteTest/libs/sherpa-onnx-2.0.3-static-link-onnxruntime.aar
+
+      - name: Build standalone VietNote Offline APK
+        run: gradle :vietnoteTest:assembleDebug
+
+      - name: Validate APK and native runtime isolation
+        run: |
+          APK=vietnoteTest/build/outputs/apk/debug/vietnoteTest-debug.apk
+          BUILD_TOOLS=$(ls -1 "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)
+          "$ANDROID_HOME/build-tools/$BUILD_TOOLS/zipalign" -c -v 4 "$APK"
+          "$ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/$BUILD_TOOLS/aapt" dump badging "$APK" | head -n 3
+          unzip -Z1 "$APK" | grep '^lib/arm64-v8a/libsherpa-onnx-jni.so$'
+          if unzip -Z1 "$APK" | grep -q '^lib/arm64-v8a/libonnxruntime.so$'; then
+            echo "Unexpected shared ONNX Runtime in isolated test APK"
+            exit 1
+          fi
+          cp "$APK" vietnoteTest/build/outputs/apk/debug/COROS-DJI-VietNote-ASR-Offline-INT8-0.2.0.apk
+          sha256sum vietnoteTest/build/outputs/apk/debug/COROS-DJI-VietNote-ASR-Offline-INT8-0.2.0.apk
+
+      - name: Upload test APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: COROS-DJI-VietNote-ASR-Offline-INT8-0.2.0
+          path: vietnoteTest/build/outputs/apk/debug/COROS-DJI-VietNote-ASR-Offline-INT8-0.2.0.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish isolated VietNote Offline test release
+        if: github.ref == 'refs/heads/feature/vietnote-offline-int8-test'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: vietnote-asr-offline-int8-v0.2.0
+          name: COROS DJI Studio - VietNote Offline INT8 Test 0.2.0
+          prerelease: true
+          make_latest: false
+          files: vietnoteTest/build/outputs/apk/debug/COROS-DJI-VietNote-ASR-Offline-INT8-0.2.0.apk
+          fail_on_unmatched_files: true
+          overwrite_files: true
