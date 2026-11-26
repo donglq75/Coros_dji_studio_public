@@ -57,7 +57,7 @@ class OverlayActivity : ComponentActivity() {
     }
 }
 
-private data class VideoInfo(val epochSeconds: Long?, val durationMs: Long?, val width: Int?, val height: Int?, val fps: String?)
+private data class VideoInfo(val epochSeconds: Long?, val durationMs: Long?, val width: Int?, val height: Int?, val fps: String?, val rotationDegrees: Int = 0)
 private data class SelectedVideo(val uri: Uri, val name: String, val info: VideoInfo)
 
 private fun findFitFileInFolder(context: Context, folderUri: Uri): Pair<Uri, String>? {
@@ -224,7 +224,8 @@ private fun SyncHome(activity: OverlayActivity) {
                                 item.optLong("duration", -1L).takeIf { it > 0L },
                                 item.optInt("width", 0).takeIf { it > 0 },
                                 item.optInt("height", 0).takeIf { it > 0 },
-                                item.optString("fps").takeIf { it.isNotBlank() }
+                                item.optString("fps").takeIf { it.isNotBlank() },
+                                item.optInt("rotation", 0)
                             )
                         )
                     }.toMap()
@@ -261,6 +262,7 @@ private fun SyncHome(activity: OverlayActivity) {
                             put("width", video.info.width ?: 0)
                             put("height", video.info.height ?: 0)
                             put("fps", video.info.fps ?: "")
+                            put("rotation", video.info.rotationDegrees)
                         })
                     }
                 }
@@ -334,6 +336,7 @@ private fun SyncHome(activity: OverlayActivity) {
                             put("width", video.info.width ?: 0)
                             put("height", video.info.height ?: 0)
                             put("fps", video.info.fps ?: "")
+                            put("rotation", video.info.rotationDegrees)
                         })
                     }
                 }
@@ -589,7 +592,7 @@ private fun SyncHome(activity: OverlayActivity) {
                     val items = videosToRender.mapNotNull { video ->
                         video.info.epochSeconds?.let { start ->
                             VideoExportItem(video.uri, video.name, start, video.info.durationMs ?: 30_000L,
-                                video.info.width ?: 1920, video.info.height ?: 1080)
+                                video.info.width ?: 1920, video.info.height ?: 1080, video.info.rotationDegrees)
                         }
                     }
                     val fitData = summary
@@ -605,7 +608,7 @@ private fun SyncHome(activity: OverlayActivity) {
                                 put(org.json.JSONObject().apply {
                                     put("uri", item.uri.toString()); put("name", item.name)
                                     put("start", item.startEpochSeconds); put("duration", item.durationMs)
-                                    put("width", item.width); put("height", item.height)
+                                    put("width", item.width); put("height", item.height); put("rotation", item.rotationDegrees)
                                 })
                             }
                         }
@@ -937,6 +940,14 @@ private fun parseDjiFilenameEpoch(name: String): Long? {
     }.getOrNull()
 }
 
+private fun normalizeVideoRotation(degrees: Int): Int {
+    val normalized = ((degrees % 360) + 360) % 360
+    return listOf(0, 90, 180, 270).minByOrNull { candidate ->
+        val delta = kotlin.math.abs(normalized - candidate)
+        minOf(delta, 360 - delta)
+    } ?: 0
+}
+
 private fun readVideoInfoFast(activity: OverlayActivity, uri: Uri): VideoInfo {
     val retriever = MediaMetadataRetriever()
     var duration: Long? = null
@@ -958,13 +969,14 @@ private fun readVideoInfoFast(activity: OverlayActivity, uri: Uri): VideoInfo {
     }
     // Android reports encoded dimensions plus a separate rotation tag. Normalize
     // to the displayed frame orientation before sizing the telemetry bitmap.
+    rotation = normalizeVideoRotation(rotation)
     if (rotation % 180 != 0) { val w = width; width = height; height = w }
     val sourceName = displayName(activity, uri)
     val epoch = parseStudioFilenameEpoch(sourceName)
         ?: parseDjiFilenameEpoch(sourceName)
         ?: readMp4CreationTime(activity, uri)
         ?: rawDate?.let { parseVideoDate(it) }
-    return VideoInfo(epoch, duration, width, height, null)
+    return VideoInfo(epoch, duration, width, height, null, rotation)
 }
 
 private fun readVideoInfo(activity: OverlayActivity, uri: Uri): VideoInfo {
@@ -994,8 +1006,9 @@ private fun readVideoInfo(activity: OverlayActivity, uri: Uri): VideoInfo {
     val containerDate = readMp4CreationTime(activity, uri)
     val epoch = filenameDate ?: containerDate ?: rawDate?.let { parseVideoDate(it) }
     val fps = readVideoFrameRate(activity, uri)
+    rotation = normalizeVideoRotation(rotation)
     if (rotation % 180 != 0) { val w = width; width = height; height = w }
-    return VideoInfo(epoch, duration, width, height, fps)
+    return VideoInfo(epoch, duration, width, height, fps, rotation)
 }
 
 private fun readMp4CreationTime(activity: OverlayActivity, uri: Uri): Long? = runCatching {
