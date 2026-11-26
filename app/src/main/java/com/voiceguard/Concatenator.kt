@@ -400,7 +400,7 @@ object Concatenator {
                         // Bake the container rotation into encoded frames and cancel the
                         // inherited orientation hint so every finalpass MP4 has rotation=0.
                         videoEffects += ScaleAndRotateTransformation.Builder()
-                            .setRotationDegrees(inputRotation.toFloat())
+                            .setRotationDegrees(((360 - inputRotation) % 360).toFloat())
                             .build()
                     }
                 }
