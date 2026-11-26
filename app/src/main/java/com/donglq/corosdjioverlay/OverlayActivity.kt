@@ -467,6 +467,15 @@ private fun SyncHome(activity: OverlayActivity) {
                 }
                 if (videos.isNotEmpty() && alreadyRenderedCount > 0) {
                     Text("Đã có overlay: $alreadyRenderedCount", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = includeAlreadyRendered,
+                            onCheckedChange = { includeAlreadyRendered = it })
+                        Column(Modifier.weight(1f)) {
+                            Text("Render lại video đã có overlay", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Thay thế overlay cũ của từng clip bằng bản đã chuẩn hóa orientation",
+                                fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                 }
             }
         }
