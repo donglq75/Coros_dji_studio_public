@@ -1,0 +1,67 @@
+name: VietASR tuning test APK
+
+on:
+  push:
+    branches: [ feature/vietasr-tuning-test ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: read
+
+concurrency:
+  group: vietasr-tuning-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Restore stable debug signing key
+        env:
+          DEBUG_KEYSTORE_B64: ${{ secrets.DEBUG_KEYSTORE_B64 }}
+        run: |
+          test -n "$DEBUG_KEYSTORE_B64" || { echo 'Missing repository secret DEBUG_KEYSTORE_B64'; exit 1; }
+          mkdir -p signing
+          printf '%s' "$DEBUG_KEYSTORE_B64" | base64 --decode > signing/debug.keystore
+          test -s signing/debug.keystore
+      - name: Set up Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Build isolated VietASR tuning APK
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gradle assembleVietAsrTest
+      - name: Validate APK, package ID, signature and native libraries
+        run: |
+          APK=app/build/outputs/apk/vietAsrTest/app-vietAsrTest.apk
+          test -s "$APK"
+          BUILD_TOOLS=$(ls -1 "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)
+          "$ANDROID_HOME/build-tools/$BUILD_TOOLS/zipalign" -c -v 4 "$APK"
+          "$ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK"
+          "$ANDROID_HOME/build-tools/$BUILD_TOOLS/aapt" dump badging "$APK" | head -n 3
+          "$ANDROID_HOME/build-tools/$BUILD_TOOLS/aapt" dump badging "$APK" | grep "com.corosdjistudio.vietasrtest"
+          unzip -Z1 "$APK" | grep '^lib/arm64-v8a/libonnxruntime.so$'
+          unzip -Z1 "$APK" | grep '^lib/arm64-v8a/libvietasr.so$'
+          unzip -Z1 "$APK" | grep '^lib/arm64-v8a/libvietasr_jni.so$'
+          cp "$APK" app/build/outputs/apk/vietAsrTest/COROS-DJI-VietASR-Tuning-Test-0.1.0.apk
+      - name: Publish isolated test release
+        if: github.ref == 'refs/heads/feature/vietasr-tuning-test'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: vietasr-tuning-test-v0.1.0
+          name: COROS DJI VietASR Tuning Test 0.1.0
+          prerelease: true
+          make_latest: false
+          files: app/build/outputs/apk/vietAsrTest/COROS-DJI-VietASR-Tuning-Test-0.1.0.apk
+          fail_on_unmatched_files: true
+          overwrite_files: true
