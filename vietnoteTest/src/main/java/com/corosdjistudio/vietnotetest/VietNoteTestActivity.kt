@@ -212,7 +212,7 @@ class VietNoteTestActivity : Activity() {
                                 decoded.tokens.forEachIndexed { tokenIndex, token ->
                                     val time = decoded.timestamps.getOrNull(tokenIndex) ?: 0f
                                     result.append(String.format(java.util.Locale.US, "%.3f", time))
-                                        .append("\\t").append(token).append('\n')
+                                        .append("\t").append(token).append('\n')
                                 }
                                 result.append('\n')
                             } finally {
