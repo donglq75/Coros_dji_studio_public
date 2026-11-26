@@ -357,23 +357,37 @@ class VideoOverlayBatchExporter(
                 ?: error("Không truy cập được thư mục dự án")
         } else null
 
-        var name = "$base.mp4"
-        var suffix = 2
+        val candidateBases = setOf(base, legacyCorosOverlayOutputBaseName(originalName))
+        fun isPreviousOverlay(name: String): Boolean = candidateBases.any { candidate ->
+            Regex("^${Regex.escape(candidate)}(?:_\\d+)?\\.mp4$", RegexOption.IGNORE_CASE).matches(name)
+        }
         var targetUri: Uri? = null
         if (treeFolder != null) {
             if (!treeFolder.canWrite()) error("Thư mục dự án không có quyền ghi")
-            while (treeFolder.findFile(name) != null) name = "${base}_${suffix++}.mp4"
-            targetUri = treeFolder.createFile("video/mp4", name)?.uri
+            // This method is only reached for clips selected for rendering. If the user
+            // explicitly enabled re-rendering, replace prior overlay variants for this clip.
+            treeFolder.listFiles().filter { isPreviousOverlay(it.name ?: "") }.forEach { old ->
+                if (!old.delete()) throw IOException("Không thay thế được overlay cũ: ${old.name}")
+            }
+            targetUri = treeFolder.createFile("video/mp4", "$base.mp4")?.uri
         } else {
             val folderId = DocumentsContract.getDocumentId(folderUri)
             val children = DocumentsContract.buildChildDocumentsUriUsingTree(folderUri, folderId)
-            val existing = mutableSetOf<String>()
+            val existing = mutableListOf<Pair<String, String>>()
             context.contentResolver.query(children,
-                arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { cursor ->
-                while (cursor.moveToNext()) existing += cursor.getString(0)
+                arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { cursor ->
+                val idColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                val nameColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                while (cursor.moveToNext()) existing += cursor.getString(idColumn) to cursor.getString(nameColumn)
             }
-            while (name in existing) name = "${base}_${suffix++}.mp4"
-            targetUri = DocumentsContract.createDocument(context.contentResolver, folderUri, "video/mp4", name)
+            existing.filter { isPreviousOverlay(it.second) }.forEach { (id, name) ->
+                val oldUri = DocumentsContract.buildDocumentUriUsingTree(folderUri, id)
+                if (!DocumentsContract.deleteDocument(context.contentResolver, oldUri)) {
+                    throw IOException("Không thay thế được overlay cũ: $name")
+                }
+            }
+            targetUri = DocumentsContract.createDocument(context.contentResolver, folderUri, "video/mp4", "$base.mp4")
         }
         val target = targetUri ?: error("Không tạo được tệp đích trong thư mục dự án")
         try {
