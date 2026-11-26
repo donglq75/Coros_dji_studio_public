@@ -8,11 +8,11 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.corosdjistudio.vietnotetest"
+        applicationId = "com.corosdjistudio.vietnotetest.offline"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0-vietnote-test"
+        versionCode = 2
+        versionName = "0.2.0-offline-int8-test"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
