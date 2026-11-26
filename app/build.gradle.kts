@@ -127,7 +127,9 @@ tasks.configureEach {
     if (name == "mergeDebugJniLibFolders" ||
         name == "mergeDebugNativeLibs" ||
         name == "mergeVgTestJniLibFolders" ||
-        name == "mergeVgTestNativeLibs" ||\n        name == "mergeVietAsrTestJniLibFolders" ||\n        name == "mergeVietAsrTestNativeLibs") {
+        name == "mergeVgTestNativeLibs" ||
+        name == "mergeVietAsrTestJniLibFolders" ||
+        name == "mergeVietAsrTestNativeLibs") {
         dependsOn(generateVietAsrJniAlias)
     }
 }
