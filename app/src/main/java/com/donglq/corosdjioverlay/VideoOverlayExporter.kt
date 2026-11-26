@@ -1,6 +1,10 @@
 package com.donglq.corosdjioverlay
 
 import android.content.ContentValues
+import android.media.MediaCodec
+import android.media.MediaExtractor
+import android.media.MediaFormat
+import android.media.MediaMuxer
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -18,12 +22,15 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BitmapOverlay
 import androidx.media3.effect.OverlayEffect
+import androidx.media3.effect.ScaleAndRotateTransformation
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
 import java.io.File
+import java.io.IOException
+import java.nio.ByteBuffer
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -202,7 +209,16 @@ class VideoOverlayBatchExporter(
             textScale, textColorName, textFontName, italicText
         )
         activeOverlay = overlay
-        val effects = Effects(emptyList(), listOf(OverlayEffect(listOf(overlay))))
+        val videoEffects = mutableListOf<androidx.media3.common.Effect>()
+        if (item.rotationDegrees != 0) {
+            // Apply each source clip's own orientation before drawing telemetry. The final
+            // muxer cannot represent different per-clip rotation hints in one MP4.
+            videoEffects += ScaleAndRotateTransformation.Builder()
+                .setRotationDegrees(item.rotationDegrees.toFloat())
+                .build()
+        }
+        videoEffects += OverlayEffect(listOf(overlay))
+        val effects = Effects(emptyList(), videoEffects)
         val editedItem = EditedMediaItem.Builder(MediaItem.fromUri(item.uri))
             .setEffects(effects)
             .build()
@@ -217,7 +233,12 @@ class VideoOverlayBatchExporter(
             .addListener(object : Transformer.Listener {
                 override fun onCompleted(composition: androidx.media3.transformer.Composition, exportResult: ExportResult) {
                     Thread {
-                        val saveResult = runCatching { publishToProject(output, item.name, item.startEpochSeconds) }
+                        val rotationFreeOutput = File(outputDirectory, "rotation_free_${System.currentTimeMillis()}.mp4")
+                        rotationFreeOutput.delete()
+                        val saveResult = runCatching {
+                            remuxWithoutRotation(output, rotationFreeOutput)
+                            publishToProject(rotationFreeOutput, item.name, item.startEpochSeconds)
+                        }.also { rotationFreeOutput.delete() }
                         android.os.Handler(android.os.Looper.getMainLooper()).post {
                             saveResult.onSuccess { savedUri ->
                                 val savedName = runCatching {
@@ -273,6 +294,57 @@ class VideoOverlayBatchExporter(
             })
             .build()
         transformer?.start(editedItem, output.absolutePath)
+    }
+
+    /**
+     * The per-clip ScaleAndRotateTransformation has already baked source orientation into frames.
+     * Strip any rotation hint Media3 preserved so downstream concatenation sees rotation=0 for every
+     * overlay file and never inherits one clip's orientation for its neighbours.
+     */
+    private fun remuxWithoutRotation(source: File, destination: File) {
+        val extractor = MediaExtractor()
+        var muxer: MediaMuxer? = null
+        var muxerStarted = false
+        try {
+            extractor.setDataSource(source.absolutePath)
+            muxer = MediaMuxer(destination.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            muxer.setOrientationHint(0)
+            val trackMap = IntArray(extractor.trackCount) { -1 }
+            for (i in 0 until extractor.trackCount) {
+                val format = extractor.getTrackFormat(i)
+                if (format.containsKey(MediaFormat.KEY_ROTATION)) {
+                    format.setInteger(MediaFormat.KEY_ROTATION, 0)
+                }
+                trackMap[i] = muxer.addTrack(format)
+                extractor.selectTrack(i)
+            }
+            if (extractor.trackCount == 0) throw IOException("Video overlay không có track.")
+            muxer.start()
+            muxerStarted = true
+            val buffer = ByteBuffer.allocate(64 * 1024 * 1024)
+            val info = MediaCodec.BufferInfo()
+            while (true) {
+                val sourceTrack = extractor.sampleTrackIndex
+                if (sourceTrack < 0) break
+                buffer.clear()
+                val size = extractor.readSampleData(buffer, 0)
+                if (size < 0) break
+                val flags = if (extractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0)
+                    MediaCodec.BUFFER_FLAG_KEY_FRAME else 0
+                info.set(0, size, extractor.sampleTime, flags)
+                muxer.writeSampleData(trackMap[sourceTrack], buffer, info)
+                extractor.advance()
+            }
+            muxer.stop()
+            muxerStarted = false
+        } finally {
+            if (muxerStarted) runCatching { muxer?.stop() }
+            runCatching { muxer?.release() }
+            extractor.release()
+        }
+        if (!destination.isFile || destination.length() <= 0L) {
+            throw IOException("Không tạo được MP4 overlay đã chuẩn hóa orientation.")
+        }
     }
 
     private fun publishToProject(source: File, originalName: String, startEpochSeconds: Long): Uri {
