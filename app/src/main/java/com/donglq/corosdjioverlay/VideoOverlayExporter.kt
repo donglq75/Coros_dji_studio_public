@@ -120,7 +120,8 @@ data class VideoExportItem(
     val startEpochSeconds: Long,
     val durationMs: Long,
     val width: Int,
-    val height: Int
+    val height: Int,
+    val rotationDegrees: Int = 0
 )
 
 @OptIn(UnstableApi::class)
@@ -187,7 +188,13 @@ class VideoOverlayBatchExporter(
 
         val output = File(outputDirectory, "coros_dji_${index + 1}_${System.currentTimeMillis()}.mp4")
         output.delete()
-        onProgress("Đang render video ${index + 1}/${videos.size}: ${item.name}")
+        val orientationLabel = when (item.rotationDegrees) {
+            90 -> "xoay 90°"
+            180 -> "xoay 180°"
+            270 -> "xoay 270°"
+            else -> if (item.height > item.width) "portrait" else "landscape"
+        }
+        onProgress("Đang render video ${index + 1}/${videos.size}: ${item.name} • $orientationLabel")
         val overlay = TelemetryBitmapOverlay(
             item.width.coerceAtLeast(640),
             item.height.coerceAtLeast(360),
@@ -203,6 +210,10 @@ class VideoOverlayBatchExporter(
         val renderStartedAtMs = android.os.SystemClock.elapsedRealtime()
         transformer = Transformer.Builder(context)
             .setVideoMimeType(MimeTypes.VIDEO_H264)
+            // Encode portrait frames in portrait dimensions instead of rotating the encoded
+            // pixels and relying on a per-file MP4 orientation tag. The downstream batch
+            // muxer can only write one orientation hint for the entire output file.
+            .setPortraitEncodingEnabled(true)
             .addListener(object : Transformer.Listener {
                 override fun onCompleted(composition: androidx.media3.transformer.Composition, exportResult: ExportResult) {
                     Thread {
