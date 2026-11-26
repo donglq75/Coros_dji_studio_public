@@ -79,7 +79,8 @@ class ExportKeepAliveService : Service() {
                     item.getLong("start"),
                     item.getLong("duration"),
                     item.getInt("width"),
-                    item.getInt("height")
+                    item.getInt("height"),
+                    item.optInt("rotation", 0)
                 )
             }
             val fitUri = Uri.parse(fitRaw)
