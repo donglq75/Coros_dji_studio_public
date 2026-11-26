@@ -54,7 +54,7 @@ jobs:
           test "$(unzip -Z1 "$APK" | grep -c '^lib/arm64-v8a/libonnxruntime.so$')" -eq 1
           cp "$APK" app/build/outputs/apk/debug/COROS-DJI-Studio-1.0.79-per-clip-orientation.apk
       - name: Publish subtitle and resumable merge test APK to isolated GitHub Release
-        if: github.ref == 'refs/heads/feature/per-clip-orientation-overlay'
+        if: github.ref == 'refs/heads/feature/subtitle-mask-merge-resume'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: per-clip-orientation-v1.0.79
