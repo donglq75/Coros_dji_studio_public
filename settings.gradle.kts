@@ -12,4 +12,4 @@ dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_P
         maven { url = uri("https://jitpack.io") }
     } }
 rootProject.name = "CorosDjiStudio"
-include(":app")
+include(":app", ":vietnoteTest")
