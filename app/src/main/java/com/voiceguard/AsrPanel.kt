@@ -115,8 +115,8 @@ fun AsrPanel(sharedWavFile: File? = null, onResultJson: (String) -> Unit = {}) {
 
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            Text("Nhận dạng tiếng Việt", fontWeight = FontWeight.Bold)
-            Text("VietASR · chạy offline trên điện thoại. Mô hình chỉ cần tải một lần.",
+            Text("VietASR · Bản thử nghiệm tinh chỉnh", fontWeight = FontWeight.Bold)
+            Text("Preset thử nghiệm: Beam 8 · VAD 0.45 · phân đoạn chồng lấn 2 giây. Không ảnh hưởng bản Studio chính.",
                 style = MaterialTheme.typography.bodySmall)
             Text(wavName, style = MaterialTheme.typography.bodySmall)
             if (sharedWavFile == null) {
