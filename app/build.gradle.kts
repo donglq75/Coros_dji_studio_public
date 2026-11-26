@@ -32,6 +32,13 @@ android {
             matchingFallbacks += listOf("debug")
             signingConfig = signingConfigs.getByName("debug")
         }
+        create("vietAsrTest") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".vietasrtest"
+            versionNameSuffix = "-vietasr-tuning-test"
+            matchingFallbacks += listOf("debug")
+            signingConfig = signingConfigs.getByName("debug")
+        }
     }
     buildFeatures {
         compose = true
@@ -120,7 +127,7 @@ tasks.configureEach {
     if (name == "mergeDebugJniLibFolders" ||
         name == "mergeDebugNativeLibs" ||
         name == "mergeVgTestJniLibFolders" ||
-        name == "mergeVgTestNativeLibs") {
+        name == "mergeVgTestNativeLibs" ||\n        name == "mergeVietAsrTestJniLibFolders" ||\n        name == "mergeVietAsrTestNativeLibs") {
         dependsOn(generateVietAsrJniAlias)
     }
 }
