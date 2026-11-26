@@ -974,6 +974,75 @@ private fun normalizeVideoRotation(degrees: Int): Int {
     } ?: 0
 }
 
+/**
+ * Read the encoded video track directly as well as the framework metadata.
+ * MediaMetadataRetriever and MediaExtractor do not expose rotation identically
+ * on every OEM/MP4 combination, so keep the per-track values and prefer a
+ * non-zero track rotation when the retriever reports its default zero.
+ */
+private data class SourceVideoTrackInfo(
+    val width: Int?,
+    val height: Int?,
+    val rotationDegrees: Int
+)
+
+private fun readSourceVideoTrackInfo(activity: OverlayActivity, uri: Uri): SourceVideoTrackInfo? {
+    val extractor = MediaExtractor()
+    return try {
+        extractor.setDataSource(activity, uri, null)
+        for (trackIndex in 0 until extractor.trackCount) {
+            val format = extractor.getTrackFormat(trackIndex)
+            val mime = format.getString(MediaFormat.KEY_MIME) ?: continue
+            if (!mime.startsWith("video/")) continue
+            val width = format.takeIf { it.containsKey(MediaFormat.KEY_WIDTH) }
+                ?.getInteger(MediaFormat.KEY_WIDTH)?.takeIf { it > 0 }
+            val height = format.takeIf { it.containsKey(MediaFormat.KEY_HEIGHT) }
+                ?.getInteger(MediaFormat.KEY_HEIGHT)?.takeIf { it > 0 }
+            val rotation = if (format.containsKey(MediaFormat.KEY_ROTATION)) {
+                format.getInteger(MediaFormat.KEY_ROTATION)
+            } else 0
+            return SourceVideoTrackInfo(width, height, rotation)
+        }
+        null
+    } catch (error: Throwable) {
+        android.util.Log.w("CorosOverlayOrientation", "Không đọc được track orientation: ${error.message}")
+        null
+    } finally {
+        runCatching { extractor.release() }
+    }
+}
+
+private fun applySourceTrackOrientation(
+    activity: OverlayActivity,
+    uri: Uri,
+    width: Int?,
+    height: Int?,
+    retrieverRotation: Int
+): Triple<Int?, Int?, Int> {
+    val track = readSourceVideoTrackInfo(activity, uri)
+    val encodedWidth = track?.width ?: width
+    val encodedHeight = track?.height ?: height
+    val trackRotation = track?.rotationDegrees ?: 0
+    // Prefer a non-zero track hint if retriever omitted it. If both APIs provide
+    // a non-zero value, MediaExtractor's selected video-track format is canonical.
+    val selectedRotation = when {
+        trackRotation != 0 -> trackRotation
+        retrieverRotation != 0 -> retrieverRotation
+        else -> 0
+    }
+    val rotation = normalizeVideoRotation(selectedRotation)
+    val displayWidth = if (rotation % 180 != 0) encodedHeight else encodedWidth
+    val displayHeight = if (rotation % 180 != 0) encodedWidth else encodedHeight
+    android.util.Log.i(
+        "CorosOverlayOrientation",
+        "source=${displayName(activity, uri)} encoded=${encodedWidth}x${encodedHeight} " +
+            "retrieverRotation=${normalizeVideoRotation(retrieverRotation)} " +
+            "trackRotation=${normalizeVideoRotation(trackRotation)} selectedRotation=$rotation " +
+            "display=${displayWidth}x${displayHeight}"
+    )
+    return Triple(displayWidth, displayHeight, rotation)
+}
+
 private fun readVideoInfoFast(activity: OverlayActivity, uri: Uri): VideoInfo {
     val retriever = MediaMetadataRetriever()
     var duration: Long? = null
@@ -993,10 +1062,12 @@ private fun readVideoInfoFast(activity: OverlayActivity, uri: Uri): VideoInfo {
     } finally {
         runCatching { retriever.release() }
     }
-    // Android reports encoded dimensions plus a separate rotation tag. Normalize
-    // to the displayed frame orientation before sizing the telemetry bitmap.
-    rotation = normalizeVideoRotation(rotation)
-    if (rotation % 180 != 0) { val w = width; width = height; height = w }
+    // Reconcile MediaMetadataRetriever with the actual selected video track.
+    // This runs per source clip, before telemetry layout or rendering is prepared.
+    val orientation = applySourceTrackOrientation(activity, uri, width, height, rotation)
+    width = orientation.first
+    height = orientation.second
+    rotation = orientation.third
     val sourceName = displayName(activity, uri)
     val epoch = parseStudioFilenameEpoch(sourceName)
         ?: parseDjiFilenameEpoch(sourceName)
@@ -1032,8 +1103,12 @@ private fun readVideoInfo(activity: OverlayActivity, uri: Uri): VideoInfo {
     val containerDate = readMp4CreationTime(activity, uri)
     val epoch = filenameDate ?: containerDate ?: rawDate?.let { parseVideoDate(it) }
     val fps = readVideoFrameRate(activity, uri)
-    rotation = normalizeVideoRotation(rotation)
-    if (rotation % 180 != 0) { val w = width; width = height; height = w }
+    // Use the same per-track orientation probe as the fast folder scan so the
+    // initial selection and restored selection cannot disagree about portrait/rotation.
+    val orientation = applySourceTrackOrientation(activity, uri, width, height, rotation)
+    width = orientation.first
+    height = orientation.second
+    rotation = orientation.third
     return VideoInfo(epoch, duration, width, height, fps, rotation)
 }
 
