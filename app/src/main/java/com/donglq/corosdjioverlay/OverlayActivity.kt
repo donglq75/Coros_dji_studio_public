@@ -232,10 +232,18 @@ private fun SyncHome(activity: OverlayActivity) {
                 }.getOrDefault(emptyMap())
                 withContext(Dispatchers.IO) {
                     savedVideos.distinct().mapNotNull { raw ->
-                        cached[raw] ?: runCatching {
+                        runCatching {
                             val uri = Uri.parse(raw)
-                            // Fast fallback: avoid a full frame-by-frame FPS scan during startup.
-                            SelectedVideo(uri, displayName(activity, uri), readVideoInfoFast(activity, uri))
+                            val previous = cached[raw]
+                            // Always refresh container orientation metadata on restore. Old cache
+                            // entries predate per-clip rotation tracking and must not default to 0°.
+                            val fresh = readVideoInfoFast(activity, uri)
+                            val info = fresh.copy(
+                                epochSeconds = fresh.epochSeconds ?: previous?.info?.epochSeconds,
+                                durationMs = fresh.durationMs ?: previous?.info?.durationMs,
+                                fps = previous?.info?.fps
+                            )
+                            SelectedVideo(uri, previous?.name ?: displayName(activity, uri), info)
                         }.getOrNull()
                     }.sortedBy { it.info.epochSeconds ?: Long.MAX_VALUE }
                 }
