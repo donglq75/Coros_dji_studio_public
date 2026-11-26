@@ -214,7 +214,7 @@ class VideoOverlayBatchExporter(
             // Apply each source clip's own orientation before drawing telemetry. The final
             // muxer cannot represent different per-clip rotation hints in one MP4.
             videoEffects += ScaleAndRotateTransformation.Builder()
-                .setRotationDegrees(item.rotationDegrees.toFloat())
+                .setRotationDegrees(((360 - item.rotationDegrees) % 360).toFloat())
                 .build()
         }
         videoEffects += OverlayEffect(listOf(overlay))
