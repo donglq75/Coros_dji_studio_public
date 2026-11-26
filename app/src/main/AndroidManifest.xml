@@ -8,7 +8,7 @@
     <application
         android:allowBackup="false"
         android:icon="@drawable/ic_studio_launcher"
-        android:label="COROS DJI Studio"
+        android:label="COROS DJI Studio · VietASR Test"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity android:name=".BatchReviewActivity" android:exported="false" />
         <activity android:name=".MainActivity" android:exported="true">
