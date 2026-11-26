@@ -7,17 +7,16 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
 import android.os.Bundle
-import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
-import com.k2fsa.sherpa.onnx.OnlineModelConfig
-import com.k2fsa.sherpa.onnx.OnlineRecognizer
-import com.k2fsa.sherpa.onnx.OnlineRecognizerConfig
-import com.k2fsa.sherpa.onnx.OnlineTransducerModelConfig
+import com.k2fsa.sherpa.onnx.OfflineModelConfig
+import com.k2fsa.sherpa.onnx.OfflineRecognizer
+import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
+import com.k2fsa.sherpa.onnx.OfflineTransducerModelConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -26,7 +25,6 @@ import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
-import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.floor
 
@@ -40,14 +38,14 @@ class VietNoteTestActivity : Activity() {
     private var selectedUris: List<Uri> = emptyList()
     private val scope = CoroutineScope(Dispatchers.Main)
 
-    private val modelDir get() = File(filesDir, "vietnote-streaming-int8")
+    private val modelDir get() = File(filesDir, "vietnote-offline-int8")
     private val modelFiles = listOf(
         "encoder.int8.onnx",
         "decoder.int8.onnx",
         "joiner.int8.onnx",
         "tokens.txt"
     )
-    private val baseUrl = "https://huggingface.co/Kaisye/VietNote-Zipformer-78M-Streaming/resolve/main/streaming/int8/"
+    private val baseUrl = "https://huggingface.co/Kaisye/VietNote-Zipformer-78M-Streaming/resolve/main/offline/int8/"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,16 +54,16 @@ class VietNoteTestActivity : Activity() {
             setPadding(24, 24, 24, 24)
         }
         val title = TextView(this).apply {
-            text = "VietNote ASR – Vietnamese / English"
+            text = "VietNote ASR – Offline INT8"
             textSize = 21f
         }
         status = TextView(this).apply {
-            text = "Bản thử nghiệm độc lập. Không can thiệp VietASR trong Studio."
+            text = "Bản Offline xử lý toàn bộ đoạn ghi âm. Không can thiệp VietASR trong Studio."
             textSize = 14f
         }
-        modelButton = Button(this).apply { text = "1. Tải mô hình VietNote (~83 MB)" }
-        pickButton = Button(this).apply { text = "2. Chọn video DJI (tối đa 20)" ; isEnabled = false }
-        runButton = Button(this).apply { text = "3. Nhận dạng offline"; isEnabled = false }
+        modelButton = Button(this).apply { text = "1. Tải mô hình Offline (~88 MB)" }
+        pickButton = Button(this).apply { text = "2. Chọn video DJI (tối đa 20)"; isEnabled = false }
+        runButton = Button(this).apply { text = "3. Nhận dạng Offline"; isEnabled = false }
         progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 100
             progress = 0
@@ -74,18 +72,14 @@ class VietNoteTestActivity : Activity() {
             textSize = 14f
             setTextIsSelectable(true)
         }
-        val scroll = ScrollView(this).apply {
-            addView(output)
-        }
+        val scroll = ScrollView(this).apply { addView(output) }
         root.addView(title)
         root.addView(status)
         root.addView(modelButton)
         root.addView(progress)
         root.addView(pickButton)
         root.addView(runButton)
-        root.addView(scroll, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
-        ))
+        root.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         setContentView(root)
 
         modelButton.setOnClickListener { downloadModel() }
@@ -122,12 +116,12 @@ class VietNoteTestActivity : Activity() {
         val ready = modelFiles.all { File(modelDir, it).length() > 0L }
         pickButton.isEnabled = ready
         runButton.isEnabled = ready && selectedUris.isNotEmpty()
-        modelButton.text = if (ready) "Mô hình đã sẵn sàng ✓" else "1. Tải mô hình VietNote (~83 MB)"
+        modelButton.text = if (ready) "Mô hình Offline đã sẵn sàng ✓" else "1. Tải mô hình Offline (~88 MB)"
     }
 
     private fun downloadModel() {
         modelButton.isEnabled = false
-        status.text = "Đang tải mô hình. Lần đầu cần Internet; nhận dạng sau đó chạy offline."
+        status.text = "Đang tải VietNote Offline INT8. Cần Internet ở lần đầu."
         scope.launch {
             try {
                 withContext(Dispatchers.IO) {
@@ -140,7 +134,7 @@ class VietNoteTestActivity : Activity() {
                         } else baseUrl + name
                         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
                             connectTimeout = 30000
-                            readTimeout = 60000
+                            readTimeout = 120000
                             instanceFollowRedirects = true
                         }
                         connection.connect()
@@ -162,7 +156,7 @@ class VietNoteTestActivity : Activity() {
                         }
                     }
                 }
-                status.text = "Tải mô hình xong. Chọn các video cần thử."
+                status.text = "Đã tải xong mô hình Offline. Chọn video để nhận dạng."
             } catch (e: Exception) {
                 status.text = "Lỗi tải mô hình: ${e.message}"
             } finally {
@@ -176,13 +170,13 @@ class VietNoteTestActivity : Activity() {
         runButton.isEnabled = false
         pickButton.isEnabled = false
         output.text = ""
-        status.text = "Đang khởi tạo VietNote..."
+        status.text = "Đang khởi tạo VietNote Offline..."
         scope.launch {
             try {
                 val report = withContext(Dispatchers.IO) {
-                    val config = OnlineRecognizerConfig(
-                        modelConfig = OnlineModelConfig(
-                            transducer = OnlineTransducerModelConfig(
+                    val config = OfflineRecognizerConfig(
+                        modelConfig = OfflineModelConfig(
+                            transducer = OfflineTransducerModelConfig(
                                 encoder = File(modelDir, "encoder.int8.onnx").absolutePath,
                                 decoder = File(modelDir, "decoder.int8.onnx").absolutePath,
                                 joiner = File(modelDir, "joiner.int8.onnx").absolutePath
@@ -190,42 +184,37 @@ class VietNoteTestActivity : Activity() {
                             tokens = File(modelDir, "tokens.txt").absolutePath,
                             numThreads = 2,
                             provider = "cpu",
-                            modelType = "zipformer2"
+                            modelType = "transducer"
                         ),
-                        decodingMethod = "modified_beam_search",
-                        maxActivePaths = 4
+                        decodingMethod = "greedy_search"
                     )
-                    val recognizer = OnlineRecognizer(config = config)
+                    val recognizer = OfflineRecognizer(config = config)
                     val result = StringBuilder()
                     try {
                         selectedUris.forEachIndexed { index, uri ->
                             val name = queryName(uri)
                             withContext(Dispatchers.Main) {
-                                status.text = "Đang nhận dạng ${index + 1}/${selectedUris.size}: $name"
+                                status.text = "Đang nhận dạng Offline ${index + 1}/${selectedUris.size}: $name"
                             }
                             val samples = decodeTo16kMono(uri)
+                            result.append("VIDEO: ").append(name).append('\n')
+                            if (samples.isEmpty()) {
+                                result.append("TEXT: [KHÔNG GIẢI MÃ ĐƯỢC ÂM THANH]\n\n")
+                                return@forEachIndexed
+                            }
                             val stream = recognizer.createStream()
                             try {
-                                var offset = 0
-                                val chunk = 1600
-                                while (offset < samples.size) {
-                                    val end = minOf(offset + chunk, samples.size)
-                                    stream.acceptWaveform(samples.copyOfRange(offset, end), 16000)
-                                    while (recognizer.isReady(stream)) recognizer.decode(stream)
-                                    offset = end
-                                }
-                                stream.inputFinished()
-                                while (recognizer.isReady(stream)) recognizer.decode(stream)
+                                stream.acceptWaveform(samples, 16000)
+                                recognizer.decode(stream)
                                 val decoded = recognizer.getResult(stream)
-                                result.append("VIDEO: ").append(name).append('\n')
                                 result.append("TEXT: ").append(decoded.text).append('\n')
                                 result.append("TOKEN_TIMESTAMPS (seconds):\n")
                                 decoded.tokens.forEachIndexed { tokenIndex, token ->
                                     val time = decoded.timestamps.getOrNull(tokenIndex) ?: 0f
                                     result.append(String.format(java.util.Locale.US, "%.3f", time))
-                                        .append("\t").append(token).append('\n')
+                                        .append("\\t").append(token).append('\n')
                                 }
-                                result.append("\n")
+                                result.append('\n')
                             } finally {
                                 stream.release()
                             }
@@ -236,10 +225,10 @@ class VietNoteTestActivity : Activity() {
                     result.toString()
                 }
                 output.text = report
-                status.text = "Hoàn tất ${selectedUris.size} video. Kết quả có timestamp từng token."
+                status.text = "Hoàn tất ${selectedUris.size} video. Kết quả Offline có timestamp token (nếu model cung cấp)."
                 saveReport(report)
             } catch (e: Exception) {
-                status.text = "Nhận dạng lỗi: ${e.message}"
+                status.text = "Nhận dạng Offline lỗi: ${e.message}"
             } finally {
                 refreshState()
             }
@@ -329,9 +318,9 @@ class VietNoteTestActivity : Activity() {
     }
 
     private fun saveReport(report: String) {
-        val file = File(getExternalFilesDir(null), "vietnote-comparison.txt")
+        val file = File(getExternalFilesDir(null), "vietnote-offline-comparison.txt")
         file.writeText(report)
-        status.append("\nĐã lưu báo cáo: Android/data/com.corosdjistudio.vietnotetest/files/vietnote-comparison.txt")
+        status.append("\nĐã lưu báo cáo: Android/data/com.corosdjistudio.vietnotetest/files/vietnote-offline-comparison.txt")
     }
 
     companion object {
