@@ -411,30 +411,21 @@ private class TelemetryBitmapOverlay(
 
         val top = margin + textPaint.textSize + labelPaint.textSize + 12f * scale
         val bottom = height - margin - labelPaint.textSize
-        if (isPortrait) {
-            // Preserve the established portrait layout and its spacing.
-            if (showPace) drawMetric("pace", "$pace /km", margin, top)
-            if (showCadence) drawMetric("cadence", cadence, width * 0.26f, top)
-            if (showHeartRate) drawMetric("hr", "$hr bpm", width * 0.51f, top)
-            if (showElapsed) drawMetric("time", elapsedText, width * 0.76f, top)
-            if (showDistance) drawMetric("distance", "$distance km", margin, bottom)
-            if (showAltitude) drawMetric("elevation", altitude, width * 0.43f, bottom)
-        } else {
-            // Landscape hierarchy: distance/time in the upper corners;
-            // four compact telemetry values along the lower-left, leaving
-            // the lower-right route map clear. No filled panel is drawn.
-            if (showDistance) drawMetric("distance", "$distance km", margin, top)
-            if (showElapsed) {
-                val elapsedWidth = textPaint.measureText(elapsedText)
-                drawMetric("time", elapsedText, width - margin - elapsedWidth, top)
-            }
-            val rowWidth = width * 0.64f
-            val cell = rowWidth / 4f
-            if (showPace) drawMetric("pace", "$pace /km", margin, bottom)
-            if (showCadence) drawMetric("cadence", cadence, margin + cell, bottom)
-            if (showHeartRate) drawMetric("hr", "$hr bpm", margin + cell * 2f, bottom)
-            if (showAltitude) drawMetric("elevation", altitude, margin + cell * 3f, bottom)
-        }
+
+        // Keep the same hierarchy in landscape and portrait:
+        // four live metrics evenly distributed across the top edge.
+        val topCell = (width - 2f * margin) / 4f
+        if (showPace) drawMetric("pace", "$pace /km", margin, top)
+        if (showCadence) drawMetric("cadence", cadence, margin + topCell, top)
+        if (showHeartRate) drawMetric("hr", "$hr bpm", margin + topCell * 2f, top)
+        if (showAltitude) drawMetric("elevation", altitude, margin + topCell * 3f, top)
+
+        // Distance and elapsed time share the lower-left area. The lower-right
+        // remains reserved for the route map, with a gap between both regions.
+        val bottomRowWidth = width * (if (isPortrait) 0.68f else 0.64f)
+        val bottomCell = bottomRowWidth / 2f
+        if (showDistance) drawMetric("distance", "$distance km", margin, bottom)
+        if (showElapsed) drawMetric("time", elapsedText, margin + bottomCell, bottom)
     }
 
     private fun drawMetric(label: String, value: String, x: Float, y: Float) {
