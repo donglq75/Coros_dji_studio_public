@@ -498,7 +498,7 @@ private fun StudioApp() {
                                             )
                                             val nonEmptyGroups = groups.filter { it.second.isNotEmpty() }
                                             val largestGroup = nonEmptyGroups.maxByOrNull { it.second.size }
-                                            fun renderOrientationItem(item: MediaOrientationItem) {
+                                            @Composable fun renderOrientationItem(item: MediaOrientationItem) {
                                                 OrientationItemRow(
                                                     item = item,
                                                     checked = item.uri.toString() in selectedOrientationUris,
