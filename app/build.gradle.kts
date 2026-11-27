@@ -11,8 +11,8 @@ android {
         applicationId = "com.corosdjistudio"
         minSdk = 26
         targetSdk = 35
-        versionCode = 88
-        versionName = "1.0.83-media-orientation"
+        versionCode = 89
+        versionName = "1.0.84-orientation-result-fix"
         // Final-pass encoding bakes orientation and clears inherited MP4 rotation metadata.
         ndk { abiFilters += listOf("arm64-v8a") }
     }
