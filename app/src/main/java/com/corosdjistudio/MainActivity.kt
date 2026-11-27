@@ -447,11 +447,33 @@ private fun StudioApp() {
                                     Text(if (scanningOrientation) "Đang quét metadata…" else "Quét hướng video của buổi quay")
                                 }
                                 orientationReport?.let { report ->
-                                    Text("KẾT QUẢ QUÉT: ${report.total} VIDEO", fontWeight = FontWeight.Bold)
-                                    Text("Hướng chính: ${when (report.dominantLandscape) { true -> "NGANG"; false -> "DỌC"; null -> "CHƯA XÁC ĐỊNH" }}",
-                                        fontWeight = FontWeight.SemiBold)
-                                    Text("Ngang: ${report.landscapeCount}  |  Dọc: ${report.portraitCount}  |  Không xác định: ${report.unknownCount}",
-                                        style = MaterialTheme.typography.bodyMedium)
+                                    Card(
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = MaterialTheme.colorScheme.secondaryContainer
+                                        ),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Column(
+                                            Modifier.fillMaxWidth().padding(12.dp),
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Text(
+                                                "KẾT QUẢ QUÉT: ${report.total} VIDEO",
+                                                fontWeight = FontWeight.Bold,
+                                                style = MaterialTheme.typography.titleSmall
+                                            )
+                                            Text(
+                                                "HƯỚNG CHÍNH: ${when (report.dominantLandscape) { true -> "NGANG"; false -> "DỌC"; null -> "CHƯA XÁC ĐỊNH" }}",
+                                                fontWeight = FontWeight.Bold,
+                                                style = MaterialTheme.typography.titleMedium
+                                            )
+                                            Text(
+                                                "Ngang: ${report.landscapeCount}  |  Dọc: ${report.portraitCount}  |  Không xác định: ${report.unknownCount}",
+                                                style = MaterialTheme.typography.bodyMedium
+                                            )
+                                        }
+                                    }
                                     if (report.dominantLandscape == null) {
                                         Text("Chưa đọc được kích thước khung hình từ metadata. Không thể kết luận hướng video trong lượt quét này.",
                                             color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
