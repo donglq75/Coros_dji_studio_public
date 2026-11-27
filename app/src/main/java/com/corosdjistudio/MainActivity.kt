@@ -488,7 +488,7 @@ private fun StudioApp() {
                                                 style = MaterialTheme.typography.bodySmall)
                                             HorizontalDivider()
                                             Text("CHỌN CLIP CẦN XỬ LÝ", fontWeight = FontWeight.Bold)
-                                            Text("Metadata chỉ cho biết góc xoay được ghi trong file, không tự kết luận hình ảnh đang ngược. Hãy xem thử clip trước khi xóa hoặc tạo bản xoay.",
+                                            Text("Metadata chỉ cho biết góc xoay được ghi trong file, không tự kết luận hình ảnh đang ngược. Hãy xem thử clip trước khi chuyển vào lưu trữ hoặc tạo bản xoay.",
                                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                             val groups = listOf(
                                                 "METADATA 180°" to report.items.filter { it.rotationDegrees == 180 },
@@ -590,7 +590,7 @@ private fun StudioApp() {
                                                 onClick = {
                                                     pendingDeleteItems = null
                                                     orientationActionBusy = true
-                                                    orientationActionMessage = "Đang xóa video đã chọn…"
+                                                    orientationActionMessage = "Đang chuyển video vào luu_tru…"
                                                     scope.launch {
                                                         val (deleted, failed) = MediaOrientationActions.archiveSelected(context, selectedDateUri ?: return@launch, deleting)
                                                         selectedDateUri?.let { folder ->
@@ -598,7 +598,7 @@ private fun StudioApp() {
                                                         }
                                                         selectedOrientationUris = emptySet()
                                                         orientationActionMessage = "Đã chuyển ${deleted.size} video vào luu_tru." +
-                                                            if (failed.isNotEmpty()) " Không xóa được: ${failed.take(3).joinToString("; ")}" else ""
+                                                            if (failed.isNotEmpty()) " Không chuyển được: ${failed.take(3).joinToString("; ")}" else ""
                                                         orientationActionBusy = false
                                                     }
                                                 },
