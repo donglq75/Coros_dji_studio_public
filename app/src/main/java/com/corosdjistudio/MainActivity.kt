@@ -71,6 +71,7 @@ private fun StudioApp() {
     var movedVideos by remember { mutableStateOf<List<StudioVideo>>(emptyList()) }
     var status by remember { mutableStateOf("Chọn video DJI trên điện thoại và thư mục lưu Studio để bắt đầu.") }
     var orientationReport by remember { mutableStateOf<MediaOrientationReport?>(null) }
+    var orientationScanMessage by remember { mutableStateOf("") }
     var scanningOrientation by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var progress by remember { mutableFloatStateOf(0f) }
@@ -432,11 +433,16 @@ private fun StudioApp() {
                                     } else {
                                         scanningOrientation = true
                                         orientationReport = null
+                                        orientationScanMessage = "Đang quét metadata video trong buổi quay…"
                                         scope.launch {
                                             try {
-                                                orientationReport = MediaOrientationScanner.scan(context, folder)
+                                                val report = MediaOrientationScanner.scan(context, folder)
+                                                orientationReport = report
+                                                orientationScanMessage = report.summary()
                                             } catch (error: Throwable) {
-                                                status = "Quét hướng video lỗi: ${error.localizedMessage ?: error.javaClass.simpleName}"
+                                                val reason = error.localizedMessage ?: error.javaClass.simpleName
+                                                orientationScanMessage = "QUÉT HƯỚNG VIDEO THẤT BẠI: $reason"
+                                                status = orientationScanMessage
                                             } finally {
                                                 scanningOrientation = false
                                             }
@@ -446,33 +452,40 @@ private fun StudioApp() {
                                     modifier = Modifier.fillMaxWidth()) {
                                     Text(if (scanningOrientation) "Đang quét metadata…" else "Quét hướng video của buổi quay")
                                 }
+                                if (orientationReport == null && orientationScanMessage.isNotBlank()) {
+                                    Text(
+                                        orientationScanMessage,
+                                        modifier = Modifier.fillMaxWidth().background(
+                                            MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp)
+                                        ).padding(12.dp),
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
                                 orientationReport?.let { report ->
-                                    Card(
-                                        shape = RoundedCornerShape(12.dp),
-                                        colors = CardDefaults.cardColors(
-                                            containerColor = MaterialTheme.colorScheme.secondaryContainer
-                                        ),
-                                        modifier = Modifier.fillMaxWidth()
+                                    Column(
+                                        Modifier.fillMaxWidth()
+                                            .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(12.dp))
+                                            .padding(12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
-                                        Column(
-                                            Modifier.fillMaxWidth().padding(12.dp),
-                                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
                                             Text(
                                                 "KẾT QUẢ QUÉT: ${report.total} VIDEO",
                                                 fontWeight = FontWeight.Bold,
-                                                style = MaterialTheme.typography.titleSmall
+                                                style = MaterialTheme.typography.titleSmall,
+                                                color = MaterialTheme.colorScheme.onSurface
                                             )
                                             Text(
                                                 "HƯỚNG CHÍNH: ${when (report.dominantLandscape) { true -> "NGANG"; false -> "DỌC"; null -> "CHƯA XÁC ĐỊNH" }}",
                                                 fontWeight = FontWeight.Bold,
-                                                style = MaterialTheme.typography.titleMedium
+                                                style = MaterialTheme.typography.titleMedium,
+                                                color = MaterialTheme.colorScheme.onSurface
                                             )
                                             Text(
                                                 "Ngang: ${report.landscapeCount}  |  Dọc: ${report.portraitCount}  |  Không xác định: ${report.unknownCount}",
-                                                style = MaterialTheme.typography.bodyMedium
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurface
                                             )
-                                        }
                                     }
                                     if (report.dominantLandscape == null) {
                                         Text("Chưa đọc được kích thước khung hình từ metadata. Không thể kết luận hướng video trong lượt quét này.",
