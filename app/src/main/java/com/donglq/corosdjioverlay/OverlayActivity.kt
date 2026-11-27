@@ -147,13 +147,14 @@ private fun SyncHome(activity: OverlayActivity) {
             message.startsWith("Không thể khôi phục batch:") ||
             message.startsWith("Đã dừng:") || message.startsWith("Đã hủy:")
         exporting = exportPrefs.getBoolean(ExportKeepAliveService.KEY_RUNNING, !finished)
-        hasPendingExport = exportPrefs.getBoolean(ExportKeepAliveService.KEY_PENDING, false)
+        hasPendingExport = exportPrefs.getBoolean(ExportKeepAliveService.KEY_PENDING, false) ||
+            exportPrefs.getBoolean(ExportKeepAliveService.KEY_RUNNING, false)
         if (finished) {
             stopRequested = false
             cancelRequested = false
         }
         if (message.startsWith("Kết thúc:") || message.startsWith("Đã hủy:")) {
-            exportProgress = 1f
+            if (message.startsWith("Kết thúc:")) exportProgress = 1f
             val raw = exportPrefs.getString(ExportKeepAliveService.KEY_REVIEW_URIS, "[]") ?: "[]"
             recentOverlayUris = runCatching { val a = org.json.JSONArray(raw); (0 until a.length()).map { a.getString(it) } }.getOrDefault(emptyList())
         }
