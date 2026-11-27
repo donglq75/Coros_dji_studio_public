@@ -70,6 +70,8 @@ private fun StudioApp() {
     var lastCaptureTime by remember { mutableStateOf(studioPrefs.getLong("last_capture_time", 0L)) }
     var movedVideos by remember { mutableStateOf<List<StudioVideo>>(emptyList()) }
     var status by remember { mutableStateOf("Chọn video DJI trên điện thoại và thư mục lưu Studio để bắt đầu.") }
+    var orientationReport by remember { mutableStateOf<MediaOrientationReport?>(null) }
+    var scanningOrientation by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var progress by remember { mutableFloatStateOf(0f) }
     var progressText by remember { mutableStateOf("") }
@@ -416,6 +418,49 @@ private fun StudioApp() {
                         }
                         Text(selectedDateName?.let { "Overlay, VG và Tổng hợp sẽ dùng thư mục ngày $it." }
                             ?: "Chọn bộ nhớ gốc Studio để quét các buổi quay.", style = MaterialTheme.typography.bodySmall)
+                        Spacer(Modifier.height(8.dp))
+                        Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("KIỂM TRA HƯỚNG VIDEO", fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.labelLarge)
+                                Text("Quét metadata toàn bộ video trong buổi quay để tìm clip có rotation 90°/180°/270° hoặc khác hướng ngang/dọc với đa số.",
+                                    style = MaterialTheme.typography.bodySmall)
+                                Button(onClick = {
+                                    val folder = selectedDateUri
+                                    if (folder == null) {
+                                        Toast.makeText(context, "Chọn buổi quay trước.", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        scanningOrientation = true
+                                        orientationReport = null
+                                        scope.launch {
+                                            try {
+                                                orientationReport = MediaOrientationScanner.scan(context, folder)
+                                            } catch (error: Throwable) {
+                                                status = "Quét hướng video lỗi: ${error.localizedMessage ?: error.javaClass.simpleName}"
+                                            } finally {
+                                                scanningOrientation = false
+                                            }
+                                        }
+                                    }
+                                }, enabled = selectedDateUri != null && !scanningOrientation,
+                                    modifier = Modifier.fillMaxWidth()) {
+                                    Text(if (scanningOrientation) "Đang quét metadata…" else "Quét hướng video của buổi quay")
+                                }
+                                orientationReport?.let { report ->
+                                    Text(report.summary(), fontWeight = FontWeight.SemiBold)
+                                    if (report.outliers.isEmpty()) {
+                                        Text("Không phát hiện clip lệch hướng qua metadata.")
+                                    } else {
+                                        Text("Clip cần kiểm tra (${report.outliers.size}):", fontWeight = FontWeight.SemiBold)
+                                        report.outliers.forEach { item ->
+                                            Text("• ${item.name} — ${item.note}", style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
+                                    Text("Lưu ý: quét metadata không nhận ra video bị lộn ngược trong chính hình ảnh nếu file không có rotation tag (ví dụ pixel đã đảo nhưng metadata = 0°).",
+                                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
                         Spacer(Modifier.height(12.dp))
                         OutlinedButton(onClick = { videoPicker.launch(arrayOf("video/*")) }, enabled = !busy,
                             modifier = Modifier.fillMaxWidth()) { Text("Chọn video (${selectedUris.size})") }
