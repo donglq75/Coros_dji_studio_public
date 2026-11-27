@@ -223,6 +223,7 @@ private fun StudioApp() {
             }
         }) { padding ->
             Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 18.dp, vertical = 14.dp)
+                // Keep one vertical scroll owner; the media video list below is a regular Column.
                 .verticalScroll(rememberScrollState())) {
                 if (selectedTab == 0) {
                     Text("COROS × DJI STUDIO", style = MaterialTheme.typography.labelLarge,
