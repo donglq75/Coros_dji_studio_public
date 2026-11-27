@@ -540,8 +540,8 @@ private fun StudioApp() {
                         }, modifier = Modifier.fillMaxWidth()) { Text("Mở VoiceGuard") }
                         Spacer(Modifier.height(10.dp))
                         Text("Video đã đưa vào Studio: ${movedVideos.size}", fontWeight = FontWeight.Bold)
-                        LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            items(movedVideos, key = { it.uri.toString() }) { item ->
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            movedVideos.forEach { item ->
                                 Card(shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                                     Column(Modifier.padding(12.dp)) {
                                         Text(item.name, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
