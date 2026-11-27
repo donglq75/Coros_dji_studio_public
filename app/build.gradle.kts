@@ -11,8 +11,8 @@ android {
         applicationId = "com.corosdjistudio"
         minSdk = 26
         targetSdk = 35
-        versionCode = 92
-        versionName = "1.0.87-media-page-scroll-fix"
+        versionCode = 93
+        versionName = "1.0.88-media-scroll-crash-fix"
         // Final-pass encoding bakes orientation and clears inherited MP4 rotation metadata.
         ndk { abiFilters += listOf("arm64-v8a") }
     }
