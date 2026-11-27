@@ -53,20 +53,20 @@ jobs:
           unzip -Z1 "$APK" | grep '^lib/arm64-v8a/libvietasr.so$'
           test "$(unzip -Z1 "$APK" | grep -c '^lib/arm64-v8a/libonnxruntime.so$')" -eq 1
           cp "$APK" app/build/outputs/apk/debug/COROS-DJI-Studio-1.0.78-rotation-metadata-cleared.apk
-      - name: Upload Media orientation result display fix APK
+      - name: Upload Media orientation single-text result APK
         if: github.ref == 'refs/heads/feature/media-orientation-scan-v1.0.83'
         uses: actions/upload-artifact@v4
         with:
-          name: COROS-DJI-Studio-1.0.85-orientation-result-display-fix
+          name: COROS-DJI-Studio-1.0.86-orientation-single-text-result
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
-      - name: Publish Media orientation result display fix to GitHub Release
+      - name: Publish Media orientation single-text result to GitHub Release
         if: github.ref == 'refs/heads/feature/media-orientation-scan-v1.0.83'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: studio-v1.0.85-orientation-result-display-fix
-          name: COROS DJI Studio 1.0.85 - Orientation Result Display Fix
+          tag_name: studio-v1.0.86-orientation-single-text-result
+          name: COROS DJI Studio 1.0.86 - Orientation Single Text Result
           prerelease: true
           make_latest: false
           files: app/build/outputs/apk/debug/app-debug.apk
