@@ -223,7 +223,7 @@ private fun StudioApp() {
             }
         }) { padding ->
             Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 18.dp, vertical = 14.dp)
-                .then(if (selectedTab == 0) Modifier.verticalScroll(rememberScrollState()) else Modifier)) {
+                .verticalScroll(rememberScrollState())) {
                 if (selectedTab == 0) {
                     Text("COROS × DJI STUDIO", style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
