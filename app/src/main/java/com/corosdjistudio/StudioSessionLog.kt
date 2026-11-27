@@ -39,7 +39,7 @@ data class StudioConsolidationReport(
  */
 object StudioSessionLog {
     private const val PREFS = "studio_product_log"
-    private const val ARCHIVE = "Studio_Luu_tru"
+    private const val ARCHIVE = "luu_tru"
 
     /**
      * Chuẩn hóa tree/document URI của cùng một thư mục SAF để VG, Overlay và Tổng hợp
@@ -123,6 +123,49 @@ object StudioSessionLog {
         save(context, folder, data)
     }
 
+    /** Move a successfully processed source clip into the permanent luu_tru folder. */
+    @Synchronized
+    fun archiveSourceVideo(context: Context, folder: Uri, sourceUri: Uri, sourceName: String): String {
+        val tree = canonicalTree(folder)
+        val rootId = folderDocumentId(folder)
+        val sourceId = runCatching { DocumentsContract.getDocumentId(sourceUri) }
+            .getOrElse { throw IOException("Không xác định được video nguồn: " + sourceName) }
+        val parentId = findParentDocumentId(context, tree, rootId, sourceId, 4)
+            ?: throw IOException("Không tìm thấy video nguồn trong thư mục phiên: " + sourceName)
+        val archiveDir = findOrCreateDirectory(context, tree, rootId, ARCHIVE)
+        val reserved = children(context, archiveDir).map { it.name }.toMutableSet()
+        val targetName = uniqueName(sourceName) { it in reserved }
+        val sourceParent = DocumentsContract.buildDocumentUriUsingTree(tree, parentId)
+        val moved = DocumentsContract.moveDocument(context.contentResolver, sourceUri, sourceParent, archiveDir)
+            ?: throw IOException("Không chuyển được " + sourceName + " vào luu_tru")
+        if (targetName != sourceName) {
+            val renamed = runCatching { DocumentsContract.renameDocument(context.contentResolver, moved, targetName) }.getOrNull()
+            return if (renamed != null) targetName else sourceName
+        }
+        return sourceName
+    }
+
+    private fun findParentDocumentId(context: Context, tree: Uri, parentId: String, targetId: String, depth: Int): String? {
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentId)
+        val columns = arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE)
+        val directories = mutableListOf<String>()
+        context.contentResolver.query(childrenUri, columns, null, null, null)?.use { cursor ->
+            while (cursor.moveToNext()) {
+                val id = cursor.getString(0) ?: continue
+                val name = cursor.getString(1) ?: ""
+                val mime = cursor.getString(2) ?: ""
+                if (id == targetId) return parentId
+                if (depth > 0 && mime == DocumentsContract.Document.MIME_TYPE_DIR &&
+                    name !in setOf("luu_tru", "Studio_Luu_tru", "VoiceGuard_giu_goc")) directories += id
+            }
+        }
+        if (depth <= 0) return null
+        for (childId in directories) {
+            val found = findParentDocumentId(context, tree, childId, targetId, depth - 1)
+            if (found != null) return found
+        }
+        return null
+    }
     private fun findOrCreate(data: JSONArray, originalName: String): JSONObject {
         for (i in 0 until data.length()) {
             val entry = data.optJSONObject(i) ?: continue
@@ -290,63 +333,8 @@ object StudioSessionLog {
      * (mtime cũ có thể khiến tư liệu vừa chuyển vào lưu trữ bị xóa nhầm).
      * Không đụng tới các video sản phẩm ở thư mục ngày hoặc thư mục product.
      */
-    fun cleanupExpiredArchive(context: Context, folder: Uri, retentionDays: Int = 7): Int {
-        if (retentionDays <= 0) return 0
-        val tree = canonicalTree(folder)
-        val parentId = folderDocumentId(folder)
-        val folderName = StudioStorage.displayName(
-            context, DocumentsContract.buildDocumentUriUsingTree(tree, parentId)
-        )
-        val folderDate = runCatching {
-            SimpleDateFormat("yyMMdd", Locale.US).parse(folderName)?.time
-        }.getOrNull() ?: return 0
-        val cutoff = System.currentTimeMillis() - retentionDays.toLong() * 86_400_000L
-        if (folderDate >= cutoff) return 0
-
-        val parentChildren = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentId)
-        val columns = arrayOf(
-            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-            DocumentsContract.Document.COLUMN_MIME_TYPE
-        )
-        var archiveId: String? = null
-        context.contentResolver.query(parentChildren, columns, null, null, null)?.use { cursor ->
-            while (cursor.moveToNext()) {
-                if (cursor.getString(1) == ARCHIVE &&
-                    cursor.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR) {
-                    archiveId = cursor.getString(0)
-                    break
-                }
-            }
-        }
-        val id = archiveId ?: return 0
-        val archiveUri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
-        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(tree, id)
-        val fileColumns = arrayOf(
-            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-            DocumentsContract.Document.COLUMN_MIME_TYPE
-        )
-        val oldFiles = mutableListOf<Uri>()
-        context.contentResolver.query(childrenUri, fileColumns, null, null, null)?.use { cursor ->
-            while (cursor.moveToNext()) {
-                val mime = cursor.getString(1) ?: ""
-                if (mime.startsWith("video/")) {
-                    val childId = cursor.getString(0) ?: continue
-                    oldFiles += DocumentsContract.buildDocumentUriUsingTree(tree, childId)
-                }
-            }
-        }
-        var deleted = 0
-        oldFiles.forEach { uri ->
-            if (runCatching { DocumentsContract.deleteDocument(context.contentResolver, uri) }.getOrDefault(false)) {
-                deleted++
-            }
-        }
-        val remaining = context.contentResolver.query(childrenUri,
-            arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null)?.use { it.count } ?: 1
-        if (remaining == 0) runCatching { DocumentsContract.deleteDocument(context.contentResolver, archiveUri) }
-        return deleted
-    }
+    /** Permanent archive: intentionally never auto-deleted. */
+    fun cleanupExpiredArchive(context: Context, folder: Uri, retentionDays: Int = 7): Int = 0
 
     /**
      * Chọn đúng một sản phẩm cho mỗi video nguồn. Bản không dùng được chuyển vào
@@ -378,7 +366,7 @@ object StudioSessionLog {
             !it.name.startsWith("COROS_", true) &&
                 !Regex("^\\d{6}_\\d{6}(?:_\\d{2})?_ovl(?:_\\d+)?\\.mp4$", RegexOption.IGNORE_CASE).matches(it.name) &&
                 !isMasked(it.name) &&
-                !it.name.startsWith(ARCHIVE, true)
+                !it.name.equals(ARCHIVE, true) && !it.name.equals("Studio_Luu_tru", true) && !it.name.equals("VoiceGuard_giu_goc", true)
         }.forEach { child ->
             if (!sources.containsKey(child.name)) {
                 val entry = JSONObject().put("original", child.name)
@@ -445,53 +433,32 @@ object StudioSessionLog {
             }
         }
 
-        // Preserve source/original videos permanently in the user-visible luu_tru folder.
-        // Derived OVL/VG files that are not selected remain in the short-lived Studio_Luu_tru folder.
-        val originalFilesToArchive = files.filter { it.name in archiveOriginals && it.name !in keep }
-        if (originalFilesToArchive.isNotEmpty()) {
-            try {
-                val permanentArchive = findOrCreateDirectory(context, tree, folderId, "luu_tru")
-                val reservedArchiveNames = children(context, permanentArchive).map { it.name }.toMutableSet()
-                originalFilesToArchive.forEach { child ->
-                    try {
-                        val targetName = uniqueName(child.name) { it in reservedArchiveNames }
-                        val sourceToMove = if (targetName != child.name) {
-                            DocumentsContract.renameDocument(context.contentResolver, child.uri, targetName)
-                                ?: throw IOException("Không tạo được tên lưu trữ duy nhất")
-                        } else child.uri
-                        DocumentsContract.moveDocument(context.contentResolver, sourceToMove, child.parentUri, permanentArchive)
-                            ?: throw IOException("SAF không di chuyển được bản gốc vào luu_tru")
-                        reservedArchiveNames += targetName
-                        archived++
-                        archivedOriginals++
-                    } catch (e: Throwable) {
-                        errors += "${child.name}: ${e.localizedMessage ?: "không thể lưu bản gốc vào luu_tru"}"
-                    }
-                }
-            } catch (e: Throwable) {
-                errors += "Không tạo được thư mục luu_tru: ${e.localizedMessage ?: "lỗi"}"
-            }
-        }
-
-        val archiveFiles = files.filter { it.name in archive && it.name !in keep }
-        if (archiveFiles.isNotEmpty()) {
+        // Move all superseded originals and OVL/VG intermediates into the same permanent luu_tru folder.
+        val filesToArchive = files.filter { (it.name in archiveOriginals || it.name in archive) && it.name !in keep }
+        if (filesToArchive.isNotEmpty()) {
             try {
                 val archiveUri = findOrCreateDirectory(context, tree, folderId, ARCHIVE)
-                archiveFiles.forEach { child ->
+                val reservedNames = children(context, archiveUri).map { it.name }.toMutableSet()
+                filesToArchive.forEach { child ->
                     try {
-                        DocumentsContract.moveDocument(context.contentResolver, child.uri, child.parentUri, archiveUri)
-                            ?: throw IOException("SAF không di chuyển được file")
+                        val targetName = uniqueName(child.name) { it in reservedNames }
+                        val moved = DocumentsContract.moveDocument(context.contentResolver, child.uri, child.parentUri, archiveUri)
+                            ?: throw IOException("SAF không di chuyển được file vào luu_tru")
+                        if (targetName != child.name) {
+                            DocumentsContract.renameDocument(context.contentResolver, moved, targetName)
+                                ?: throw IOException("Đã chuyển file nhưng không đổi được tên lưu trữ")
+                        }
+                        reservedNames += targetName
                         archived++
-                        if (child.name in sourceOriginalNames) archivedOriginals++
+                        if (child.name in archiveOriginals) archivedOriginals++
                     } catch (e: Throwable) {
-                        errors += "${child.name}: ${e.localizedMessage ?: "không thể lưu trữ"}"
+                        errors += child.name + ": " + (e.localizedMessage ?: "không thể lưu vào luu_tru")
                     }
                 }
             } catch (e: Throwable) {
-                errors += "Không tạo được thư mục lưu trữ: ${e.localizedMessage ?: "lỗi"}"
+                errors += "Không tạo được thư mục luu_tru: " + (e.localizedMessage ?: "lỗi")
             }
         }
-
         // Chuẩn hóa tên sản phẩm cũ có tiền tố COROS_ nếu phần còn lại bắt đầu
         // bằng timestamp YYMMDD_HHMMSS. Không đoán tên cho file không nhận diện được.
         val normalizedKeep = mutableSetOf<String>()

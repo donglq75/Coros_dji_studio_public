@@ -534,6 +534,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             var done = 0
             var failed = 0
             var lastError = ""
+            var archiveWarnings = 0
+            var lastArchiveWarning = ""
             var detector: VoiceDetector? = null
             try {
                 val todo = clips.filter { it.status == ClipStatus.SENSITIVE }
@@ -569,6 +571,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         } ?: (clip.name.substringBeforeLast(".") + "_masked.mp4")
                         val maskDurationMs = ((System.nanoTime() - maskStartedAtNanos) / 1_000_000L).coerceAtLeast(1L)
                         runCatching { StudioSessionLog.recordMasked(ctx, outDir, clip.name, outputName, maskDurationMs) }
+                        val archiveResult = runCatching { StudioSessionLog.archiveSourceVideo(ctx, outDir, Uri.parse(clip.uri), clip.name) }
+                        if (archiveResult.isFailure) {
+                            archiveWarnings++
+                            lastArchiveWarning = clip.name + ": " + (archiveResult.exceptionOrNull()?.localizedMessage ?: "lỗi SAF")
+                        }
                         recentMaskedUris = recentMaskedUris + (outputName to outputUri.toString())
                         mark(clip.uri, ClipStatus.MASKED)
                         done++
@@ -582,6 +589,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 scanDone = todo.size
                 message = "Xong: đã che voice theo từng đoạn cho $done clip" + if (failed > 0) ", lỗi $failed clip: $lastError" else "."
+                if (archiveWarnings > 0) message += " Chưa chuyển vào luu_tru " + archiveWarnings + " nguồn: " + lastArchiveWarning
             } catch (e: CancellationException) {
                 message = "Đã dừng."
                 throw e

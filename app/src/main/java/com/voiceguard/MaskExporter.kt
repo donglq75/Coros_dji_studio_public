@@ -28,7 +28,7 @@ import kotlin.coroutines.resumeWithException
 
 object MaskExporter {
     const val OUTPUT_FOLDER = "VoiceGuard_masked"
-    const val ARCHIVE_FOLDER = "VoiceGuard_giu_goc"
+    const val ARCHIVE_FOLDER = "luu_tru"
 
     /** Tìm hoặc tạo thư mục con trong thư mục người dùng đã chọn. */
     fun ensureDir(ctx: Context, tree: Uri, folderName: String): Uri {
@@ -97,9 +97,10 @@ object MaskExporter {
 
     /** Chuyển (không copy) clip gốc sang thư mục lưu giữ. */
     fun archiveOriginal(ctx: Context, tree: Uri, src: Uri, archiveDir: Uri) {
-        val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
-        DocumentsContract.moveDocument(ctx.contentResolver, src, parent, archiveDir)
-            ?: throw IOException("Không chuyển được file")
+        val name = ctx.contentResolver.query(src, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use {
+            if (it.moveToFirst()) it.getString(0) else null
+        } ?: "video.mp4"
+        StudioSessionLog.archiveSourceVideo(ctx, tree, src, name)
     }
 
     /** Thay âm thanh clip bằng nhạc, giữ nguyên hình, ghi thành file mới trong thư mục outDir. */

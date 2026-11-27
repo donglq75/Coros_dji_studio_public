@@ -108,18 +108,8 @@ private fun StudioApp() {
         if (folder == null) {
             mergeProductCount = 0
         } else {
-            val cleanupAndCount = withContext(Dispatchers.IO) {
-                val cleaned = runCatching {
-                    StudioSessionLog.cleanupExpiredArchive(context, folder, retentionDays = 7)
-                }.getOrDefault(0)
-                val count = runCatching {
-                    StudioSessionLog.listConsolidatedProducts(context, folder).size
-                }.getOrDefault(0)
-                cleaned to count
-            }
-            mergeProductCount = cleanupAndCount.second
-            if (cleanupAndCount.first > 0) {
-                status = "Đã tự dọn ${cleanupAndCount.first} file Studio_Luu_tru của buổi quay quá 7 ngày."
+            mergeProductCount = withContext(Dispatchers.IO) {
+                runCatching { StudioSessionLog.listConsolidatedProducts(context, folder).size }.getOrDefault(0)
             }
         }
     }
@@ -782,8 +772,7 @@ private fun Overview(
                         Text("Phủ dữ liệu COROS: ${report.overlayCount}/${report.originals} video • ${formatReportDuration(report.overlayDurationMs)}")
                         Text("Che âm thanh VG: ${report.maskedCount}/${report.originals} video • ${formatReportDuration(report.maskedDurationMs)}")
                         Text("File OVL đã tạo: ${report.overlayCount}")
-                        Text("Video gốc đã chuyển vào Studio_Luu_tru: ${report.archivedOriginals}")
-                        if (report.archivedCleaned > 0) Text("Đã dọn ${report.archivedCleaned} file lưu trữ quá 7 ngày.")
+                        Text("File trung gian đã chuyển vào luu_tru: ${report.archivedOriginals}")
                         Text("Tổng thời gian các công đoạn: ${formatReportDuration(report.importDurationMs + report.overlayDurationMs + report.maskedDurationMs)}",
                             fontWeight = FontWeight.SemiBold)
                         if (report.errors.isNotEmpty()) {

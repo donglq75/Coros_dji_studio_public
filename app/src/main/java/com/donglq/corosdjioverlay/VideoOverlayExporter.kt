@@ -239,6 +239,8 @@ class VideoOverlayBatchExporter(
                                 outputTreeUri?.let {
                                     val renderDurationMs = (android.os.SystemClock.elapsedRealtime() - renderStartedAtMs).coerceAtLeast(1L)
                                     StudioSessionLog.recordOverlay(context, it, item.name, savedName, renderDurationMs)
+                                    val archiveResult = runCatching { StudioSessionLog.archiveSourceVideo(context, it, item.uri, item.name) }
+                                    if (archiveResult.isFailure) onProgress("Đã lưu OVL " + savedName + " nhưng chưa chuyển được bản gốc vào luu_tru: " + (archiveResult.exceptionOrNull()?.localizedMessage ?: "lỗi SAF"))
                                 }
                                 completed++
                                 doneKeys.add(videoKey(item))
