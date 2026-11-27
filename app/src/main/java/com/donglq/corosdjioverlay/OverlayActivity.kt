@@ -802,7 +802,23 @@ private fun OverlayFramePreview(
                         contentScale = ContentScale.Fit,
                         modifier = Modifier.fillMaxSize()
                     )
-                    Column(Modifier.align(Alignment.TopStart).padding(10.dp),
+                    Row(
+                        Modifier.align(Alignment.TopStart).fillMaxWidth().padding(10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        val metrics = buildList {
+                            if (showPace) add("PACE $pace/km")
+                            if (showCadence) add("CAD ${point?.cadence?.let { it.toString() } ?: "--"}")
+                            if (showHeartRate) add("HR ${point?.heartRate?.let { it.toString() } ?: "--"}")
+                            if (showAltitude) add("ELEV ${point?.altitudeMeters?.toInt()?.let { "$it M" } ?: "--"}")
+                        }
+                        metrics.forEach { metric ->
+                            Text(metric, color = textColor, fontFamily = textFont,
+                                fontWeight = FontWeight.Bold, fontStyle = fontStyle,
+                                fontSize = metricSize, maxLines = 1)
+                        }
+                    }
+                    Column(Modifier.align(Alignment.BottomStart).padding(10.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         if (showDistance || showElapsed) {
                             Text(
@@ -813,19 +829,6 @@ private fun OverlayFramePreview(
                                 color = textColor, fontFamily = textFont, fontWeight = FontWeight.Bold,
                                 fontStyle = fontStyle, fontSize = mainSize
                             )
-                        }
-                    }
-                    Column(Modifier.align(Alignment.BottomStart).padding(10.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        val metrics = buildList {
-                            if (showPace) add("PACE $pace/km")
-                            if (showHeartRate) add("HR ${point?.heartRate?.let { it.toString() } ?: "--"}")
-                            if (showCadence) add("CAD ${point?.cadence?.let { it.toString() } ?: "--"}")
-                            if (showAltitude) add("ELEV ${point?.altitudeMeters?.toInt()?.let { "$it M" } ?: "--"}")
-                        }
-                        metrics.chunked(3).forEach { row ->
-                            Text(row.joinToString("  ·  "), color = textColor, fontFamily = textFont,
-                                fontWeight = FontWeight.Bold, fontStyle = fontStyle, fontSize = metricSize)
                         }
                     }
                     if (showRoute) {
