@@ -2,7 +2,7 @@ name: Android Debug APK # feature builds publish versioned test releases
 
 on:
   push:
-    branches: [ main, feature/subtitle-mask-merge-resume ]
+    branches: [ main, feature/subtitle-mask-merge-resume, feature/media-orientation-scan-v1.0.83 ]
   workflow_dispatch:
 
 permissions:
@@ -53,6 +53,14 @@ jobs:
           unzip -Z1 "$APK" | grep '^lib/arm64-v8a/libvietasr.so$'
           test "$(unzip -Z1 "$APK" | grep -c '^lib/arm64-v8a/libonnxruntime.so$')" -eq 1
           cp "$APK" app/build/outputs/apk/debug/COROS-DJI-Studio-1.0.78-rotation-metadata-cleared.apk
+      - name: Upload Media orientation scan test APK
+        if: github.ref == 'refs/heads/feature/media-orientation-scan-v1.0.83'
+        uses: actions/upload-artifact@v4
+        with:
+          name: COROS-DJI-Studio-1.0.83-media-orientation
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
       - name: Publish subtitle and resumable merge test APK to isolated GitHub Release
         if: github.ref == 'refs/heads/feature/subtitle-mask-merge-resume'
         uses: softprops/action-gh-release@v2
