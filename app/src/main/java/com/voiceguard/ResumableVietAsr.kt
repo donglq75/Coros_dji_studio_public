@@ -21,7 +21,7 @@ private const val RESUME_CHUNK_SAMPLES = RESUME_CHUNK_SEC * RESUME_RATE
 private const val RESUME_OVERLAP_SAMPLES = RESUME_OVERLAP_SEC * RESUME_RATE
 private const val RESUME_CHECKPOINT = "vietasr_tuned_resume_checkpoint.json"
 private const val RESUME_MODEL_DIR = "viet-asr-int8-46adacf"
-private const val TUNED_CONFIG_ID = "beam8-vad045-silence900-pad1200-overlap2-v1"
+private const val TUNED_CONFIG_ID = "beam8-vad050-silence1200-pad1000-overlap2-v2"
 private data class ResumeWavInfo(val dataStart: Long, val sampleCount: Long)
 
 suspend fun runResumableVietAsr(context: Context, sourceUri: Uri, onProgress: (Float, String) -> Unit): JSONObject =
@@ -57,20 +57,34 @@ suspend fun runResumableVietAsr(context: Context, sourceUri: Uri, onProgress: (F
             .put("max_active_paths", 8)
             .put("num_threads", 3)
             .put("vad_backend", "silero")
-            .put("vad_threshold", 0.45)
-            .put("min_silence_ms", 900)
+            .put("vad_threshold", 0.50)
+            .put("min_silence_ms", 1200)
             .put("adaptive_silence", true)
             .put("adaptive_short_ms", 4000)
             .put("adaptive_mid_silence_ms", 500)
             .put("adaptive_long_ms", 10000)
             .put("adaptive_long_silence_ms", 300)
-            .put("speech_pad_ms", 1200)
+            .put("speech_pad_ms", 1000)
             .put("max_utterance_ms", 30000)
             .put("emit_segments", true)
             .put("emit_words", true)
             .put("emit_voiced_regions", true)
             .put("model_dir", modelDir.absolutePath).toString()
 
+        // Independent VAD-only diagnostics: same PCM, two Silero thresholds.
+        // These pipelines do not alter the ASR transcript.
+        val vadBaselineConfig = JSONObject()
+            .put("backend", "silero").put("threshold", 0.50)
+            .put("hangover_ms", 250).put("min_speech_ms", 100)
+            .put("min_silence_ms", 100).put("speech_pad_ms", 500).toString()
+        val vadCandidateConfig = JSONObject()
+            .put("backend", "silero").put("threshold", 0.45)
+            .put("hangover_ms", 250).put("min_speech_ms", 100)
+            .put("min_silence_ms", 100).put("speech_pad_ms", 500).toString()
+        val vadBaselinePipeline = Pipeline.newPipeline().add("vad", vadBaselineConfig).build()
+        val vadCandidatePipeline = Pipeline.newPipeline().add("vad", vadCandidateConfig).build()
+
+        try {
         for (index in 0 until total) {
             if (index in done) continue
             val coreStart = index.toLong() * RESUME_CHUNK_SAMPLES
@@ -81,6 +95,8 @@ suspend fun runResumableVietAsr(context: Context, sourceUri: Uri, onProgress: (F
             val countSamples = (readEnd - readStart).toInt()
             var pipeline: Pipeline? = null
             var session: Session? = null
+            var vadBaselineSession: Session? = null
+            var vadCandidateSession: Session? = null
             try {
                 val coreStartSec = coreStart.toDouble() / RESUME_RATE
                 val coreEndSec = coreEnd.toDouble() / RESUME_RATE
@@ -92,24 +108,36 @@ suspend fun runResumableVietAsr(context: Context, sourceUri: Uri, onProgress: (F
                         "s (đọc thêm " + RESUME_OVERLAP_SEC + "s ngữ cảnh)")
                 pipeline = Pipeline.newPipeline().add("vietasr", config).build()
                 session = pipeline.stream(16000f)
+                vadBaselineSession = vadBaselinePipeline.stream(16000f)
+                vadCandidateSession = vadCandidatePipeline.stream(16000f)
                 RandomAccessFile(wav, "r").use { raf ->
                     raf.seek(info.dataStart + readStart * 2L)
                     var consumed = 0
                     while (consumed < countSamples) {
                         val n = minOf(RESUME_RATE * 2, countSamples - consumed)
-                        session!!.accept(ShortArray(n) { resumeReadShort(raf) })
+                        val pcm = ShortArray(n) { resumeReadShort(raf) }
+                        session!!.accept(pcm)
+                        vadBaselineSession!!.accept(pcm)
+                        vadCandidateSession!!.accept(pcm)
                         consumed += n
                     }
                 }
                 val result = session!!.finalResult()
                 val native = JSONObject(result.toJson())
+                val vadBaseline = JSONObject(vadBaselineSession!!.finalResult().toJson())
+                val vadCandidate = JSONObject(vadCandidateSession!!.finalResult().toJson())
                 shiftResumeTimes(native, readStartSec)
+                shiftResumeTimes(vadBaseline, readStartSec)
+                shiftResumeTimes(vadCandidate, readStartSec)
                 val cropped = cropTunedChunkToCore(native, coreStartSec, coreEndSec)
                 val item = JSONObject().put("index", index)
                     .put("coreStartSec", coreStartSec).put("coreEndSec", coreEndSec)
                     .put("readStartSec", readStartSec).put("readEndSec", readEndSec)
                     .put("text", cropped.optString("text", result.text.trim()))
                     .put("result", cropped)
+                    .put("vadDiagnostics", JSONObject()
+                        .put("baseline_threshold_050", vadBaseline)
+                        .put("candidate_threshold_045", vadCandidate))
                 val current = activeCheckpoint.optJSONArray("completedChunks") ?: JSONArray()
                 val merged = (0 until current.length()).mapNotNull { current.optJSONObject(it) }
                     .filter { it.optInt("index") != index }.toMutableList()
@@ -124,8 +152,14 @@ suspend fun runResumableVietAsr(context: Context, sourceUri: Uri, onProgress: (F
                         "/" + (info.sampleCount / RESUME_RATE) + "s")
             } finally {
                 try { session?.close() } catch (_: Throwable) {}
+                try { vadBaselineSession?.close() } catch (_: Throwable) {}
+                try { vadCandidateSession?.close() } catch (_: Throwable) {}
                 try { pipeline?.close() } catch (_: Throwable) {}
             }
+        }
+        } finally {
+            try { vadBaselinePipeline.close() } catch (_: Throwable) {}
+            try { vadCandidatePipeline.close() } catch (_: Throwable) {}
         }
         val chunks = activeCheckpoint.optJSONArray("completedChunks") ?: JSONArray()
         val ordered = JSONArray()
@@ -145,9 +179,13 @@ suspend fun runResumableVietAsr(context: Context, sourceUri: Uri, onProgress: (F
             }
         onProgress(1f, "Đã nhận dạng và lưu đủ " + total + " đoạn.")
         JSONObject()
-            .put("engine", "VietASR Android SDK 0.1.0 · tuned beam 8 · 60s chunks with 2s overlap")
+            .put("engine", "VietASR Android SDK 0.1.0 · tuning v0.2.0 · beam 8 · 60s chunks with 2s overlap")
             .put("configId", TUNED_CONFIG_ID)
             .put("config", JSONObject(config))
+            .put("vadDiagnosticConfigs", JSONObject()
+                .put("baseline_threshold_050", JSONObject(vadBaselineConfig))
+                .put("candidate_threshold_045", JSONObject(vadCandidateConfig)))
+            .put("vadDiagnosticNote", "Standalone Silero VAD measurements; separate from ASR-derived speech/voiced_regions fields.")
             .put("modelRevision", "46adacf22d379e3d6b860d5d08e9fb02cbc122ea")
             .put("runtime", "VietASR native C++ core + ONNX Runtime")
             .put("language", "vi").put("audioFormat", "PCM 16-bit mono 16000 Hz")
