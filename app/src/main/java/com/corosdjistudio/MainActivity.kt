@@ -724,3 +724,5 @@ private fun StatusCard(message: String) {
         Text(message, Modifier.padding(14.dp), style = MaterialTheme.typography.bodySmall)
     }
 }
+
+// Orientation report summary is intentionally grouped into one visible result card.
