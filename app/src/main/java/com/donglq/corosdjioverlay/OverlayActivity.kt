@@ -100,6 +100,13 @@ private fun SyncHome(activity: OverlayActivity) {
     var status by remember { mutableStateOf("Chọn video DJI và file FIT để bắt đầu.") }
     val exportPrefs = remember { activity.getSharedPreferences("coros_service_export", android.content.Context.MODE_PRIVATE) }
     var exporting by remember { mutableStateOf(exportPrefs.getBoolean(ExportKeepAliveService.KEY_RUNNING, false)) }
+    var hasPendingExport by remember {
+        mutableStateOf(exportPrefs.getBoolean(ExportKeepAliveService.KEY_PENDING, false) ||
+            exportPrefs.getBoolean(ExportKeepAliveService.KEY_RUNNING, false))
+    }
+    var stopRequested by remember { mutableStateOf(false) }
+    var cancelRequested by remember { mutableStateOf(false) }
+    var showCancelConfirm by remember { mutableStateOf(false) }
     var exportStatus by remember { mutableStateOf(exportPrefs.getString(ExportKeepAliveService.KEY_STATUS, "") ?: "") }
     var exportProgress by remember { mutableFloatStateOf(0f) }
     var exportTotal by remember { mutableIntStateOf(0) }
@@ -136,9 +143,16 @@ private fun SyncHome(activity: OverlayActivity) {
             exportTotal = total
             exportProgress = (if (currentMatch != null) done - 1 else done).coerceAtLeast(0).toFloat() / total.coerceAtLeast(1)
         }
-        val finished = message.startsWith("Kết thúc:") || message.startsWith("Không thể khôi phục batch:")
+        val finished = message.startsWith("Kết thúc:") ||
+            message.startsWith("Không thể khôi phục batch:") ||
+            message.startsWith("Đã dừng:") || message.startsWith("Đã hủy:")
         exporting = exportPrefs.getBoolean(ExportKeepAliveService.KEY_RUNNING, !finished)
-        if (message.startsWith("Kết thúc:")) {
+        hasPendingExport = exportPrefs.getBoolean(ExportKeepAliveService.KEY_PENDING, false)
+        if (finished) {
+            stopRequested = false
+            cancelRequested = false
+        }
+        if (message.startsWith("Kết thúc:") || message.startsWith("Đã hủy:")) {
             exportProgress = 1f
             val raw = exportPrefs.getString(ExportKeepAliveService.KEY_REVIEW_URIS, "[]") ?: "[]"
             recentOverlayUris = runCatching { val a = org.json.JSONArray(raw); (0 until a.length()).map { a.getString(it) } }.getOrDefault(emptyList())
@@ -158,9 +172,21 @@ private fun SyncHome(activity: OverlayActivity) {
         onDispose { runCatching { activity.unregisterReceiver(receiver) } }
     }
 
-    // Restore cached metadata first so the screen can recover immediately without rescanning every MP4.
+    // Reconcile the persisted flag with the actual foreground service. A force-stopped
+    // process must not leave the render control permanently disabled.
     LaunchedEffect(Unit) {
+        val manager = activity.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        val serviceAlive = manager.getRunningServices(Int.MAX_VALUE).any {
+            it.service.className == ExportKeepAliveService::class.java.name
+        }
+        val savedRunning = exportPrefs.getBoolean(ExportKeepAliveService.KEY_RUNNING, false)
+        exporting = savedRunning && serviceAlive
+        hasPendingExport = exportPrefs.getBoolean(ExportKeepAliveService.KEY_PENDING, false) || savedRunning
+        if (savedRunning && !serviceAlive) {
+            exportStatus = "Phiên render đã gián đoạn. Có thể tiếp tục từ video chưa hoàn tất."
+        }
         exportPrefs.getString(ExportKeepAliveService.KEY_STATUS, null)?.let { applyExportStatus(it) }
+        if (savedRunning && !serviceAlive) exporting = false
         restoring = true
         status = "Đang khôi phục phiên trước…"
         try {
@@ -563,29 +589,19 @@ private fun SyncHome(activity: OverlayActivity) {
                 Text("Chọn thư mục lưu")
             }
         }
-        // A force-stopped Android process leaves KEY_RUNNING persisted even though
-        // the foreground service is gone. The service already persists the full
-        // batch configuration, so starting it without extras restores its journal.
-        if (exportPrefs.getBoolean(ExportKeepAliveService.KEY_RUNNING, false)) {
-            OutlinedButton(
-                onClick = {
-                    // Lock immediately so repeated taps cannot issue duplicate resume requests.
+        val renderButtonEnabled = !exporting && (
+            hasPendingExport || (outputTreeUri != null && videosToRender.isNotEmpty() && fitMatchedCount > 0)
+        )
+        Button(
+            onClick = {
+                if (hasPendingExport) {
+                    // Resume the persisted batch; the journal skips every completed clip.
                     exporting = true
-                    exportStatus = "Đang khôi phục phiên render đã gián đoạn…"
+                    exportStatus = "Đang tiếp tục phiên render…"
                     val resumeIntent = android.content.Intent(activity, ExportKeepAliveService::class.java)
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) activity.startForegroundService(resumeIntent)
                     else activity.startService(resumeIntent)
-                },
-                enabled = !exporting,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(if (exporting) "ĐANG RENDER…"
-                    else "▶ TIẾP TỤC PHIÊN RENDER ĐANG DỞ")
-            }
-        }
-        if (videos.isNotEmpty() && summary?.points?.isNotEmpty() == true) {
-            Button(
-                onClick = {
+                } else {
                     val items = videosToRender.mapNotNull { video ->
                         video.info.epochSeconds?.let { start ->
                             VideoExportItem(video.uri, video.name, start, video.info.durationMs ?: 30_000L,
@@ -597,9 +613,12 @@ private fun SyncHome(activity: OverlayActivity) {
                         exportStatus = "FIT không khớp video. Hãy chọn lại FIT."
                     } else {
                         exporting = true
+                        hasPendingExport = true
+                        stopRequested = false
+                        cancelRequested = false
                         exportProgress = 0f
                         exportTotal = items.size
-                        exportStatus = "Đang render ${items.size} video…"
+                        exportStatus = "Đang chuẩn bị render ${items.size} video…"
                         val payload = org.json.JSONArray().apply {
                             items.forEach { item ->
                                 put(org.json.JSONObject().apply {
@@ -629,18 +648,64 @@ private fun SyncHome(activity: OverlayActivity) {
                         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) activity.startForegroundService(serviceIntent)
                         else activity.startService(serviceIntent)
                     }
+                }
+            },
+            enabled = renderButtonEnabled,
+            modifier = Modifier.fillMaxWidth().height(54.dp)
+        ) {
+            Text(when {
+                exporting -> "ĐANG RENDER…"
+                hasPendingExport -> "▶ TIẾP TỤC RENDER PHẦN CÒN LẠI"
+                videosToRender.isEmpty() && videos.isNotEmpty() -> "Đã có Overlay cho tất cả video"
+                else -> "OVERLAY / RENDER  ·  ${videosToRender.size} video"
+            })
+        }
+        if (exportStatus.isNotBlank() || exporting) {
+            LinearProgressIndicator(progress = { exportProgress.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
+            Text(exportStatus, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (exporting) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        stopRequested = true
+                        exportStatus = "Đang chờ hoàn tất video hiện tại để dừng…"
+                        val command = android.content.Intent(activity, ExportKeepAliveService::class.java)
+                            .setAction(ExportKeepAliveService.ACTION_STOP_AFTER_CURRENT)
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) activity.startForegroundService(command)
+                        else activity.startService(command)
+                    },
+                    enabled = !stopRequested && !cancelRequested,
+                    modifier = Modifier.weight(1f)
+                ) { Text(if (stopRequested) "ĐANG CHỜ DỪNG…" else "DỪNG") }
+                OutlinedButton(
+                    onClick = { showCancelConfirm = true },
+                    enabled = !cancelRequested,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text(if (cancelRequested) "ĐANG CHỜ HỦY…" else "HỦY RENDER") }
+            }
+        }
+        if (showCancelConfirm) {
+            AlertDialog(
+                onDismissRequest = { showCancelConfirm = false },
+                title = { Text("Hủy batch OVL?") },
+                text = { Text("Studio sẽ hoàn tất video đang render rồi hủy các video còn lại. Những video OVL đã lưu được giữ nguyên; không xóa video gốc hay kết quả đã hoàn tất.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showCancelConfirm = false
+                        cancelRequested = true
+                        exportStatus = "Đang chờ hoàn tất video hiện tại để hủy batch…"
+                        val command = android.content.Intent(activity, ExportKeepAliveService::class.java)
+                            .setAction(ExportKeepAliveService.ACTION_CANCEL_AFTER_CURRENT)
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) activity.startForegroundService(command)
+                        else activity.startService(command)
+                    }) { Text("Hủy render", color = MaterialTheme.colorScheme.error) }
                 },
-                enabled = !exporting && !exportPrefs.getBoolean(ExportKeepAliveService.KEY_RUNNING, false) &&
-                    outputTreeUri != null && videosToRender.isNotEmpty() && fitMatchedCount > 0,
-                modifier = Modifier.fillMaxWidth().height(54.dp)
-            ) {
-                Text(if (exporting) "Đang render…" else if (videosToRender.isEmpty()) "Đã có Overlay cho tất cả video"
-                    else "OVERLAY / RENDER  ·  ${videosToRender.size} video")
-            }
-            if (exportStatus.isNotBlank() || exporting) {
-                LinearProgressIndicator(progress = { exportProgress.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
-                Text(exportStatus, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+                dismissButton = {
+                    TextButton(onClick = { showCancelConfirm = false }) { Text("Tiếp tục render") }
+                }
+            )
         }
         if (status.isNotBlank() && !status.startsWith("Đang khôi phục")) {
             Text(status, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, maxLines = 2)

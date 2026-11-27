@@ -142,6 +142,19 @@ class VideoOverlayBatchExporter(
     private var index = 0
     private var transformer: Transformer? = null
     private var activeOverlay: TelemetryBitmapOverlay? = null
+    @Volatile private var stopAfterCurrent = false
+    @Volatile private var cancelAfterCurrent = false
+
+    fun requestStopAfterCurrent() {
+        stopAfterCurrent = true
+        onProgress("Đã yêu cầu dừng: sẽ hoàn tất video hiện tại rồi tạm dừng batch.")
+    }
+
+    fun requestCancelAfterCurrent() {
+        cancelAfterCurrent = true
+        stopAfterCurrent = false
+        onProgress("Đã yêu cầu hủy: sẽ hoàn tất video hiện tại rồi hủy phần còn lại.")
+    }
     private val outputDirectory = File(context.cacheDir, "coros_dji_export").apply { mkdirs() }
     private var completed = 0
     private var skipped = 0
@@ -166,6 +179,14 @@ class VideoOverlayBatchExporter(
     }
 
     private fun exportNext() {
+        if (cancelAfterCurrent) {
+            onFinished("Đã hủy: đã giữ nguyên ${doneKeys.size} video OVL hoàn tất; không xóa file đã lưu.")
+            return
+        }
+        if (stopAfterCurrent) {
+            onFinished("Đã dừng: đã giữ nguyên ${doneKeys.size} video OVL hoàn tất. Có thể tiếp tục phần còn lại sau.")
+            return
+        }
         while (index < videos.size && doneKeys.contains(videoKey(videos[index]))) index++
         if (index >= videos.size) {
             onFinished("Kết thúc: đã lưu $completed video${if (skipped > 0) ", bỏ qua $skipped video không có FIT/GPS" else ""}${if (failed > 0) ", lỗi $failed video (có thể chạy lại)" else ""}. Thư mục dji_studio/YYMMDD (cùng thư mục video gốc).")

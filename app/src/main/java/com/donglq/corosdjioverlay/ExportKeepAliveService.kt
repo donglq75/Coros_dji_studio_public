@@ -38,6 +38,15 @@ class ExportKeepAliveService : Service() {
             }
         }
 
+        if (intent?.action == ACTION_STOP_AFTER_CURRENT) {
+            exporter?.requestStopAfterCurrent()
+            return START_NOT_STICKY
+        }
+        if (intent?.action == ACTION_CANCEL_AFTER_CURRENT) {
+            exporter?.requestCancelAfterCurrent()
+            return START_NOT_STICKY
+        }
+
         if (intent?.hasExtra(EXTRA_VIDEOS) == true) {
             prefs.edit()
                 .putString(KEY_VIDEOS, intent.getStringExtra(EXTRA_VIDEOS))
@@ -58,11 +67,18 @@ class ExportKeepAliveService : Service() {
                 .putString(KEY_TEXT_FONT, intent.getStringExtra(EXTRA_TEXT_FONT) ?: "sans-serif")
                 .putBoolean(KEY_ITALIC_TEXT, intent.getBooleanExtra(EXTRA_ITALIC_TEXT, true))
                 .putBoolean(KEY_RUNNING, true)
+                .putBoolean(KEY_PENDING, true)
                 .putString(KEY_REVIEW_URIS, "[]")
                 .putString(KEY_STATUS, "Đang chuẩn bị render video…")
                 .apply()
         }
-        if (exporter == null) startOrRestore()
+        if (exporter == null) {
+            if (intent?.hasExtra(EXTRA_VIDEOS) != true) {
+                prefs.edit().putBoolean(KEY_RUNNING, true).putBoolean(KEY_PENDING, true)
+                    .putString(KEY_STATUS, "Đang tiếp tục phiên render…").apply()
+            }
+            startOrRestore()
+        }
         return START_STICKY
     }
 
@@ -104,7 +120,15 @@ class ExportKeepAliveService : Service() {
                 },
                 { message ->
                     sendStatus(message)
-                    prefs.edit().remove(KEY_VIDEOS).remove(KEY_FIT_URI).remove(KEY_OFFSET).apply()
+                    if (!message.startsWith("Đã dừng:")) {
+                        // Normal completion or explicit Hủy: discard only the pending queue.
+                        // Published OVL files and the completion journal remain untouched.
+                        prefs.edit().remove(KEY_VIDEOS).remove(KEY_FIT_URI).remove(KEY_OFFSET)
+                            .putBoolean(KEY_PENDING, false).apply()
+                    } else {
+                        // Dừng keeps the batch payload so the remaining clips can be resumed.
+                        prefs.edit().putBoolean(KEY_PENDING, true).apply()
+                    }
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     stopSelf()
                 }
@@ -136,7 +160,9 @@ class ExportKeepAliveService : Service() {
     }
 
     private fun sendStatus(message: String) {
-        val finished = message.startsWith("Kết thúc:") || message.startsWith("Không thể khôi phục batch:")
+        val finished = message.startsWith("Kết thúc:") ||
+            message.startsWith("Không thể khôi phục batch:") ||
+            message.startsWith("Đã dừng:") || message.startsWith("Đã hủy:")
         if (message.contains("Đã lưu video")) {
             val rawUri = Regex("(content://[^\\s]+)").find(message)?.groupValues?.getOrNull(1)
             val uri = rawUri?.substringBefore("•")?.trimEnd()
@@ -149,6 +175,12 @@ class ExportKeepAliveService : Service() {
         prefs.edit()
             .putString(KEY_STATUS, message)
             .putBoolean(KEY_RUNNING, !finished)
+            .putBoolean(KEY_PENDING, when {
+                message.startsWith("Đã hủy:") || message.startsWith("Kết thúc:") ||
+                    message.startsWith("Không thể khôi phục batch:") -> false
+                message.startsWith("Đã dừng:") -> true
+                else -> prefs.getBoolean(KEY_PENDING, false)
+            })
             .apply()
         sendBroadcast(Intent(ACTION_STATUS).setPackage(packageName).putExtra(EXTRA_STATUS, message))
     }
@@ -163,6 +195,8 @@ class ExportKeepAliveService : Service() {
 
     companion object {
         const val ACTION_STATUS = "com.donglq.corosdjioverlay.EXPORT_STATUS"
+        const val ACTION_STOP_AFTER_CURRENT = "com.donglq.corosdjioverlay.STOP_AFTER_CURRENT"
+        const val ACTION_CANCEL_AFTER_CURRENT = "com.donglq.corosdjioverlay.CANCEL_AFTER_CURRENT"
         const val EXTRA_STATUS = "status"
         const val EXTRA_VIDEOS = "videos"
         const val EXTRA_FIT_URI = "fit_uri"
@@ -196,6 +230,7 @@ class ExportKeepAliveService : Service() {
         private const val KEY_OFFSET = "offset"
         private const val KEY_SESSION_ID = "session_id"
         const val KEY_RUNNING = "export_running"
+        const val KEY_PENDING = "export_pending"
         const val KEY_STATUS = "export_status"
         const val KEY_REVIEW_URIS = "review_uris"
         private const val CHANNEL_ID = "coros_dji_export"
