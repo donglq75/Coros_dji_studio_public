@@ -496,20 +496,38 @@ private fun StudioApp() {
                                                 "GÓC XOAY KHÁC" to report.items.filter { it.rotationDegrees != null && it.rotationDegrees != 0 && it.rotationDegrees != 180 },
                                                 "KHÔNG ĐỌC ĐƯỢC" to report.items.filter { it.rotationDegrees == null }
                                             )
-                                            groups.filter { it.second.isNotEmpty() }.forEach { (label, groupItems) ->
+                                            val nonEmptyGroups = groups.filter { it.second.isNotEmpty() }
+                                            val largestGroup = nonEmptyGroups.maxByOrNull { it.second.size }
+                                            fun renderOrientationItem(item: MediaOrientationItem) {
+                                                OrientationItemRow(
+                                                    item = item,
+                                                    checked = item.uri.toString() in selectedOrientationUris,
+                                                    enabled = !orientationActionBusy,
+                                                    onCheckedChange = { checked ->
+                                                        selectedOrientationUris = if (checked)
+                                                            selectedOrientationUris + item.uri.toString()
+                                                        else selectedOrientationUris - item.uri.toString()
+                                                    }
+                                                )
+                                            }
+                                            // Keep small exception groups visible first; only the largest group scrolls.
+                                            nonEmptyGroups.filter { it != largestGroup }.forEach { (label, groupItems) ->
                                                 Text("$label (${groupItems.size})", fontWeight = FontWeight.SemiBold,
                                                     color = MaterialTheme.colorScheme.primary)
-                                                groupItems.forEach { item ->
-                                                    OrientationItemRow(
-                                                        item = item,
-                                                        checked = item.uri.toString() in selectedOrientationUris,
-                                                        enabled = !orientationActionBusy,
-                                                        onCheckedChange = { checked ->
-                                                            selectedOrientationUris = if (checked)
-                                                                selectedOrientationUris + item.uri.toString()
-                                                            else selectedOrientationUris - item.uri.toString()
-                                                        }
-                                                    )
+                                                groupItems.forEach { item -> renderOrientationItem(item) }
+                                            }
+                                            largestGroup?.let { (label, groupItems) ->
+                                                Text("$label (${groupItems.size})", fontWeight = FontWeight.SemiBold,
+                                                    color = MaterialTheme.colorScheme.primary)
+                                                Text("Nhóm đông nhất • cuộn trong khung dưới đây để xem từng video",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                Column(
+                                                    Modifier.fillMaxWidth().heightIn(max = 260.dp)
+                                                        .verticalScroll(rememberScrollState()),
+                                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                                ) {
+                                                    groupItems.forEach { item -> renderOrientationItem(item) }
                                                 }
                                             }
                                             Text("Đã chọn: ${selectedOrientationUris.size} clip",
@@ -521,7 +539,7 @@ private fun StudioApp() {
                                                     },
                                                     enabled = selectedOrientationUris.isNotEmpty() && !orientationActionBusy,
                                                     modifier = Modifier.weight(1f)
-                                                ) { Text("Xóa đã chọn") }
+                                                ) { Text("Chuyển vào lưu trữ") }
                                                 Button(
                                                     onClick = {
                                                         val folder = selectedDateUri ?: return@Button
@@ -534,8 +552,8 @@ private fun StudioApp() {
                                                             val errors = mutableListOf<String>()
                                                             selected.forEach { item ->
                                                                 try {
-                                                                    val outputName = MediaOrientationActions.rotate180Copy(context, folder, item)
-                                                                    orientationActionMessage = "Đã tạo $outputName"
+                                                                    val outputName = MediaOrientationActions.rotate180InSession(context, folder, item)
+                                                                    orientationActionMessage = "Đã xoay và thay thế $outputName; bản gốc đã lưu trong luu_tru"
                                                                 } catch (error: Throwable) {
                                                                     errors += "${item.name}: ${error.localizedMessage ?: error.javaClass.simpleName}"
                                                                 }
@@ -544,7 +562,7 @@ private fun StudioApp() {
                                                             }
                                                             selectedOrientationUris = emptySet()
                                                             orientationReport = MediaOrientationScanner.scan(context, folder)
-                                                            orientationActionMessage = "Đã tạo ${done - errors.size} bản xoay 180°." +
+                                                            orientationActionMessage = "Đã xoay và thay thế ${done - errors.size} video trong thư mục ngày; bản gốc được lưu trong luu_tru." +
                                                                 if (errors.isNotEmpty()) " Lỗi: ${errors.take(3).joinToString("; ")}" else ""
                                                             orientationActionBusy = false
                                                         }
@@ -557,7 +575,7 @@ private fun StudioApp() {
                                             if (orientationActionMessage.isNotBlank()) {
                                                 Text(orientationActionMessage, style = MaterialTheme.typography.bodySmall)
                                             }
-                                            Text("Bản xoay được lưu riêng trong Studio_Xoay_180; video gốc không bị ghi đè.",
+                                            Text("Video đã xoay nằm ngay trong thư mục ngày với tên gốc để OVL và VoiceGuard sử dụng. Bản gốc được giữ trong luu_tru.",
                                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
                                     }
@@ -565,8 +583,8 @@ private fun StudioApp() {
                                 pendingDeleteItems?.let { deleting ->
                                     AlertDialog(
                                         onDismissRequest = { if (!orientationActionBusy) pendingDeleteItems = null },
-                                        title = { Text("Xóa video đã chọn?") },
-                                        text = { Text("Bạn sắp xóa ${deleting.size} video khỏi thư mục buổi quay Studio. Thao tác này không xóa bản nguồn trong DJI Mimo, nhưng file trong Studio sẽ bị xóa khỏi thiết bị và có thể không khôi phục được.") },
+                                        title = { Text("Chuyển video vào luu_tru?") },
+                                        text = { Text("Sẽ chuyển ${deleting.size} video đã chọn từ thư mục ngày vào luu_tru. File được giữ nguyên để có thể xem lại hoặc khôi phục; không xóa video nguồn trong DJI Mimo.") },
                                         confirmButton = {
                                             Button(
                                                 onClick = {
@@ -574,19 +592,19 @@ private fun StudioApp() {
                                                     orientationActionBusy = true
                                                     orientationActionMessage = "Đang xóa video đã chọn…"
                                                     scope.launch {
-                                                        val (deleted, failed) = MediaOrientationActions.deleteSelected(context, deleting)
+                                                        val (deleted, failed) = MediaOrientationActions.archiveSelected(context, selectedDateUri ?: return@launch, deleting)
                                                         selectedDateUri?.let { folder ->
                                                             orientationReport = MediaOrientationScanner.scan(context, folder)
                                                         }
                                                         selectedOrientationUris = emptySet()
-                                                        orientationActionMessage = "Đã xóa ${deleted.size} video." +
+                                                        orientationActionMessage = "Đã chuyển ${deleted.size} video vào luu_tru." +
                                                             if (failed.isNotEmpty()) " Không xóa được: ${failed.take(3).joinToString("; ")}" else ""
                                                         orientationActionBusy = false
                                                     }
                                                 },
                                                 enabled = !orientationActionBusy,
                                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                                            ) { Text("Xác nhận xóa") }
+                                            ) { Text("Chuyển vào luu_tru") }
                                         },
                                         dismissButton = {
                                             TextButton(onClick = { pendingDeleteItems = null }, enabled = !orientationActionBusy) { Text("Hủy") }
