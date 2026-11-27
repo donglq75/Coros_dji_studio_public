@@ -9,6 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 data class MediaOrientationItem(
+    val uri: Uri,
     val name: String,
     val rotationDegrees: Int?,
     val width: Int?,
@@ -26,6 +27,10 @@ data class MediaOrientationReport(
     val outliers: List<MediaOrientationItem>,
     val items: List<MediaOrientationItem>
 ) {
+    val rotation180Count: Int get() = items.count { it.rotationDegrees == 180 }
+    val rotation0Count: Int get() = items.count { it.rotationDegrees == 0 }
+    val rotationOtherCount: Int get() = items.count { it.rotationDegrees != null && it.rotationDegrees != 0 && it.rotationDegrees != 180 }
+    val rotationUnknownCount: Int get() = items.count { it.rotationDegrees == null }
     val hasMismatch: Boolean get() = outliers.isNotEmpty()
     fun summary(): String {
         val dominant = when (dominantLandscape) {
@@ -80,9 +85,9 @@ object MediaOrientationScanner {
                         landscape == null -> "Không xác định được tỷ lệ khung hình"
                         else -> "Rotation $rotation°"
                     }
-                    MediaOrientationItem(name, rotation, width, height, landscape, note)
+                    MediaOrientationItem(uri, name, rotation, width, height, landscape, note)
                 } catch (t: Throwable) {
-                    MediaOrientationItem(name, null, null, null, null,
+                    MediaOrientationItem(uri, name, null, null, null, null,
                         "Không đọc được metadata: ${t.localizedMessage ?: t.javaClass.simpleName}")
                 } finally {
                     runCatching { retriever.release() }
