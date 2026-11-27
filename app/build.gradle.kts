@@ -11,8 +11,8 @@ android {
         applicationId = "com.corosdjistudio"
         minSdk = 26
         targetSdk = 35
-        versionCode = 94
-        versionName = "1.0.89-orientation-actions"
+        versionCode = 95
+        versionName = "1.0.90-archive-and-scroll-groups"
         // Final-pass encoding bakes orientation and clears inherited MP4 rotation metadata.
         ndk { abiFilters += listOf("arm64-v8a") }
     }
