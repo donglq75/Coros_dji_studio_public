@@ -53,15 +53,15 @@ jobs:
           unzip -Z1 "$APK" | grep '^lib/arm64-v8a/libonnxruntime.so$'
           unzip -Z1 "$APK" | grep '^lib/arm64-v8a/libvietasr.so$'
           unzip -Z1 "$APK" | grep '^lib/arm64-v8a/libvietasr_jni.so$'
-          cp "$APK" app/build/outputs/apk/vietAsrTest/COROS-DJI-VietASR-Tuning-Test-0.1.0.apk
+          cp "$APK" app/build/outputs/apk/vietAsrTest/COROS-DJI-VietASR-Tuning-Test-0.2.0.apk
       - name: Publish isolated test release
         if: github.ref == 'refs/heads/feature/vietasr-tuning-test'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: vietasr-tuning-test-v0.1.0
-          name: COROS DJI VietASR Tuning Test 0.1.0
+          tag_name: vietasr-tuning-test-v0.2.0
+          name: COROS DJI VietASR Tuning Test 0.2.0
           prerelease: true
           make_latest: false
-          files: app/build/outputs/apk/vietAsrTest/COROS-DJI-VietASR-Tuning-Test-0.1.0.apk
+          files: app/build/outputs/apk/vietAsrTest/COROS-DJI-VietASR-Tuning-Test-0.2.0.apk
           fail_on_unmatched_files: true
           overwrite_files: true
