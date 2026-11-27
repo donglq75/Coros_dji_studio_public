@@ -447,14 +447,32 @@ private fun StudioApp() {
                                     Text(if (scanningOrientation) "Đang quét metadata…" else "Quét hướng video của buổi quay")
                                 }
                                 orientationReport?.let { report ->
-                                    Text(report.summary(), fontWeight = FontWeight.SemiBold)
-                                    if (report.outliers.isEmpty()) {
-                                        Text("Không phát hiện clip lệch hướng qua metadata.")
-                                    } else {
-                                        Text("Clip cần kiểm tra (${report.outliers.size}):", fontWeight = FontWeight.SemiBold)
+                                    Text("KẾT QUẢ QUÉT: ${report.total} VIDEO", fontWeight = FontWeight.Bold)
+                                    Text("Hướng chính: ${when (report.dominantLandscape) { true -> "NGANG"; false -> "DỌC"; null -> "CHƯA XÁC ĐỊNH" }}",
+                                        fontWeight = FontWeight.SemiBold)
+                                    Text("Ngang: ${report.landscapeCount}  |  Dọc: ${report.portraitCount}  |  Không xác định: ${report.unknownCount}",
+                                        style = MaterialTheme.typography.bodyMedium)
+                                    if (report.dominantLandscape == null) {
+                                        Text("Chưa đọc được kích thước khung hình từ metadata. Không thể kết luận hướng video trong lượt quét này.",
+                                            color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    if (report.outliers.isNotEmpty()) {
+                                        Text("CLIP CÓ DẤU HIỆU KHÁC BIỆT (${report.outliers.size}):", fontWeight = FontWeight.SemiBold)
                                         report.outliers.forEach { item ->
+                                            val size = if (item.width != null && item.height != null) "${item.width}×${item.height}" else "không rõ kích thước"
+                                            val rotation = item.rotationDegrees?.let { "rotation ${it}°" } ?: "rotation không đọc được"
+                                            Text("• ${item.name} — $rotation — $size — ${item.note}",
+                                                style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    } else if (report.unknownCount == 0) {
+                                        Text("Không phát hiện clip lệch hướng qua metadata.")
+                                    }
+                                    if (report.unknownCount > 0) {
+                                        Text("CLIP KHÔNG ĐỌC ĐƯỢC HƯỚNG (${report.unknownCount}):", fontWeight = FontWeight.SemiBold)
+                                        report.items.filter { it.effectiveLandscape == null }.take(30).forEach { item ->
                                             Text("• ${item.name} — ${item.note}", style = MaterialTheme.typography.bodySmall)
                                         }
+                                        if (report.unknownCount > 30) Text("… và ${report.unknownCount - 30} clip khác.")
                                     }
                                     Text("Lưu ý: quét metadata không nhận ra video bị lộn ngược trong chính hình ảnh nếu file không có rotation tag (ví dụ pixel đã đảo nhưng metadata = 0°).",
                                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
