@@ -72,6 +72,11 @@ private fun StudioApp() {
     var status by remember { mutableStateOf("Chọn video DJI trên điện thoại và thư mục lưu Studio để bắt đầu.") }
     var orientationScanMessage by remember { mutableStateOf("") }
     var scanningOrientation by remember { mutableStateOf(false) }
+    var orientationReport by remember { mutableStateOf<MediaOrientationReport?>(null) }
+    var selectedOrientationUris by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var pendingDeleteItems by remember { mutableStateOf<List<MediaOrientationItem>?>(null) }
+    var orientationActionBusy by remember { mutableStateOf(false) }
+    var orientationActionMessage by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var progress by remember { mutableFloatStateOf(0f) }
     var progressText by remember { mutableStateOf("") }
@@ -436,29 +441,10 @@ private fun StudioApp() {
                                         scope.launch {
                                             try {
                                                 val report = MediaOrientationScanner.scan(context, folder)
-                                                orientationScanMessage = buildString {
-                                                    appendLine("KẾT QUẢ QUÉT: ${report.total} VIDEO")
-                                                    appendLine("HƯỚNG CHÍNH: ${when (report.dominantLandscape) { true -> "NGANG"; false -> "DỌC"; null -> "CHƯA XÁC ĐỊNH" }}")
-                                                    appendLine("Ngang: ${report.landscapeCount} | Dọc: ${report.portraitCount} | Không xác định: ${report.unknownCount}")
-                                                    if (report.outliers.isNotEmpty()) {
-                                                        appendLine()
-                                                        appendLine("CLIP CÓ DẤU HIỆU KHÁC BIỆT (${report.outliers.size}):")
-                                                        report.outliers.take(30).forEach { item ->
-                                                            appendLine("• ${item.name} — ${item.note}")
-                                                        }
-                                                        if (report.outliers.size > 30) appendLine("… và ${report.outliers.size - 30} clip khác.")
-                                                    } else if (report.unknownCount == 0) {
-                                                        appendLine("Không phát hiện clip lệch hướng qua metadata.")
-                                                    }
-                                                    if (report.unknownCount > 0) {
-                                                        appendLine()
-                                                        appendLine("CLIP KHÔNG ĐỌC ĐƯỢC HƯỚNG:")
-                                                        report.items.filter { it.effectiveLandscape == null }.take(20).forEach { item ->
-                                                            appendLine("• ${item.name} — ${item.note}")
-                                                        }
-                                                        if (report.unknownCount > 20) appendLine("… và ${report.unknownCount - 20} clip khác.")
-                                                    }
-                                                }
+                                                orientationReport = report
+                                                selectedOrientationUris = emptySet()
+                                                orientationActionMessage = ""
+                                                orientationScanMessage = "Đã quét ${report.total} video. Xem thống kê và chọn clip cần xử lý bên dưới."
                                                 status = orientationScanMessage
                                             } catch (error: Throwable) {
                                                 val reason = error.localizedMessage ?: error.javaClass.simpleName
@@ -473,14 +459,138 @@ private fun StudioApp() {
                                     modifier = Modifier.fillMaxWidth()) {
                                     Text(if (scanningOrientation) "Đang quét metadata…" else "Quét hướng video của buổi quay")
                                 }
-                                if (orientationScanMessage.isNotBlank()) {
-                                    Text(
-                                        text = orientationScanMessage,
-                                        modifier = Modifier.fillMaxWidth()
-                                            .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(12.dp))
-                                            .padding(12.dp),
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        style = MaterialTheme.typography.bodyMedium
+                                if (orientationScanMessage.isNotBlank() && orientationReport == null) {
+                                    Text(orientationScanMessage, style = MaterialTheme.typography.bodySmall)
+                                }
+                                orientationReport?.let { report ->
+                                    Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            Text("TỔNG HỢP HƯỚNG VIDEO", fontWeight = FontWeight.Bold)
+                                            Text("${report.total} VIDEO • HƯỚNG KHUNG HÌNH CHÍNH: ${when (report.dominantLandscape) { true -> "NGANG"; false -> "DỌC"; null -> "CHƯA XÁC ĐỊNH" }}",
+                                                fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                Text("Metadata xoay 180°")
+                                                Text("${report.rotation180Count}", fontWeight = FontWeight.Bold)
+                                            }
+                                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                Text("Metadata xoay 0°")
+                                                Text("${report.rotation0Count}", fontWeight = FontWeight.Bold)
+                                            }
+                                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                Text("Xoay 90°/270°")
+                                                Text("${report.rotationOtherCount}", fontWeight = FontWeight.Bold)
+                                            }
+                                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                Text("Không đọc được rotation")
+                                                Text("${report.rotationUnknownCount}", fontWeight = FontWeight.Bold)
+                                            }
+                                            Text("Ngang: ${report.landscapeCount} • Dọc: ${report.portraitCount} • Không xác định tỷ lệ: ${report.unknownCount}",
+                                                style = MaterialTheme.typography.bodySmall)
+                                            HorizontalDivider()
+                                            Text("CHỌN CLIP CẦN XỬ LÝ", fontWeight = FontWeight.Bold)
+                                            Text("Metadata chỉ cho biết góc xoay được ghi trong file, không tự kết luận hình ảnh đang ngược. Hãy xem thử clip trước khi xóa hoặc tạo bản xoay.",
+                                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            val groups = listOf(
+                                                "METADATA 180°" to report.items.filter { it.rotationDegrees == 180 },
+                                                "METADATA 0°" to report.items.filter { it.rotationDegrees == 0 },
+                                                "GÓC XOAY KHÁC" to report.items.filter { it.rotationDegrees != null && it.rotationDegrees != 0 && it.rotationDegrees != 180 },
+                                                "KHÔNG ĐỌC ĐƯỢC" to report.items.filter { it.rotationDegrees == null }
+                                            )
+                                            groups.filter { it.second.isNotEmpty() }.forEach { (label, groupItems) ->
+                                                Text("$label (${groupItems.size})", fontWeight = FontWeight.SemiBold,
+                                                    color = MaterialTheme.colorScheme.primary)
+                                                groupItems.forEach { item ->
+                                                    OrientationItemRow(
+                                                        item = item,
+                                                        checked = item.uri.toString() in selectedOrientationUris,
+                                                        enabled = !orientationActionBusy,
+                                                        onCheckedChange = { checked ->
+                                                            selectedOrientationUris = if (checked)
+                                                                selectedOrientationUris + item.uri.toString()
+                                                            else selectedOrientationUris - item.uri.toString()
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                            Text("Đã chọn: ${selectedOrientationUris.size} clip",
+                                                style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                OutlinedButton(
+                                                    onClick = {
+                                                        pendingDeleteItems = report.items.filter { it.uri.toString() in selectedOrientationUris }
+                                                    },
+                                                    enabled = selectedOrientationUris.isNotEmpty() && !orientationActionBusy,
+                                                    modifier = Modifier.weight(1f)
+                                                ) { Text("Xóa đã chọn") }
+                                                Button(
+                                                    onClick = {
+                                                        val folder = selectedDateUri ?: return@Button
+                                                        val selected = report.items.filter { it.uri.toString() in selectedOrientationUris }
+                                                        if (selected.isEmpty()) return@Button
+                                                        orientationActionBusy = true
+                                                        orientationActionMessage = "Đang tạo bản xoay 180°: 0/${selected.size}"
+                                                        scope.launch {
+                                                            var done = 0
+                                                            val errors = mutableListOf<String>()
+                                                            selected.forEach { item ->
+                                                                try {
+                                                                    val outputName = MediaOrientationActions.rotate180Copy(context, folder, item)
+                                                                    orientationActionMessage = "Đã tạo $outputName"
+                                                                } catch (error: Throwable) {
+                                                                    errors += "${item.name}: ${error.localizedMessage ?: error.javaClass.simpleName}"
+                                                                }
+                                                                done++
+                                                                orientationActionMessage = "Đã xử lý $done/${selected.size} clip"
+                                                            }
+                                                            selectedOrientationUris = emptySet()
+                                                            orientationReport = MediaOrientationScanner.scan(context, folder)
+                                                            orientationActionMessage = "Đã tạo ${done - errors.size} bản xoay 180°." +
+                                                                if (errors.isNotEmpty()) " Lỗi: ${errors.take(3).joinToString("; ")}" else ""
+                                                            orientationActionBusy = false
+                                                        }
+                                                    },
+                                                    enabled = selectedOrientationUris.isNotEmpty() && !orientationActionBusy,
+                                                    modifier = Modifier.weight(1f)
+                                                ) { Text("Tạo bản xoay 180°") }
+                                            }
+                                            if (orientationActionBusy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                                            if (orientationActionMessage.isNotBlank()) {
+                                                Text(orientationActionMessage, style = MaterialTheme.typography.bodySmall)
+                                            }
+                                            Text("Bản xoay được lưu riêng trong Studio_Xoay_180; video gốc không bị ghi đè.",
+                                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                }
+                                pendingDeleteItems?.let { deleting ->
+                                    AlertDialog(
+                                        onDismissRequest = { if (!orientationActionBusy) pendingDeleteItems = null },
+                                        title = { Text("Xóa video đã chọn?") },
+                                        text = { Text("Bạn sắp xóa ${deleting.size} video khỏi thư mục buổi quay Studio. Thao tác này không xóa bản nguồn trong DJI Mimo, nhưng file trong Studio sẽ bị xóa khỏi thiết bị và có thể không khôi phục được.") },
+                                        confirmButton = {
+                                            Button(
+                                                onClick = {
+                                                    pendingDeleteItems = null
+                                                    orientationActionBusy = true
+                                                    orientationActionMessage = "Đang xóa video đã chọn…"
+                                                    scope.launch {
+                                                        val (deleted, failed) = MediaOrientationActions.deleteSelected(context, deleting)
+                                                        selectedDateUri?.let { folder ->
+                                                            orientationReport = MediaOrientationScanner.scan(context, folder)
+                                                        }
+                                                        selectedOrientationUris = emptySet()
+                                                        orientationActionMessage = "Đã xóa ${deleted.size} video." +
+                                                            if (failed.isNotEmpty()) " Không xóa được: ${failed.take(3).joinToString("; ")}" else ""
+                                                        orientationActionBusy = false
+                                                    }
+                                                },
+                                                enabled = !orientationActionBusy,
+                                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                                            ) { Text("Xác nhận xóa") }
+                                        },
+                                        dismissButton = {
+                                            TextButton(onClick = { pendingDeleteItems = null }, enabled = !orientationActionBusy) { Text("Hủy") }
+                                        }
                                     )
                                 }
                             }
@@ -581,6 +691,27 @@ private fun StudioApp() {
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun OrientationItemRow(
+    item: MediaOrientationItem,
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+    ) {
+        Checkbox(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(item.name, fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodySmall)
+            Text(item.note, style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
