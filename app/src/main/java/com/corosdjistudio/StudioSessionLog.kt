@@ -362,6 +362,7 @@ object StudioSessionLog {
         val handled = mutableSetOf<String>()
         val keep = mutableSetOf<String>()
         val archive = mutableSetOf<String>()
+        val archiveOriginals = mutableSetOf<String>()
         val errors = mutableListOf<String>()
         var products = 0
 
@@ -417,7 +418,10 @@ object StudioSessionLog {
 
             listOfNotNull(originalFile, overlayFile, maskedFile).distinctBy { it.name }.forEach {
                 handled += it.name
-                if (chosen == null || it.name != chosen.name) archive += it.name
+                if (chosen == null || it.name != chosen.name) {
+                    if (originalFile != null && it.name == originalFile.name) archiveOriginals += it.name
+                    else archive += it.name
+                }
             }
         }
 
@@ -438,6 +442,34 @@ object StudioSessionLog {
                     ?: throw IOException("SAF không di chuyển được sản phẩm về thư mục ngày")
             } catch (e: Throwable) {
                 errors += "${child.name}: ${e.localizedMessage ?: "không thể đưa về thư mục ngày"}"
+            }
+        }
+
+        // Preserve source/original videos permanently in the user-visible luu_tru folder.
+        // Derived OVL/VG files that are not selected remain in the short-lived Studio_Luu_tru folder.
+        val originalFilesToArchive = files.filter { it.name in archiveOriginals && it.name !in keep }
+        if (originalFilesToArchive.isNotEmpty()) {
+            try {
+                val permanentArchive = findOrCreateDirectory(context, tree, folderId, "luu_tru")
+                val reservedArchiveNames = children(context, permanentArchive).map { it.name }.toMutableSet()
+                originalFilesToArchive.forEach { child ->
+                    try {
+                        val targetName = uniqueName(child.name) { it in reservedArchiveNames }
+                        val sourceToMove = if (targetName != child.name) {
+                            DocumentsContract.renameDocument(context.contentResolver, child.uri, targetName)
+                                ?: throw IOException("Không tạo được tên lưu trữ duy nhất")
+                        } else child.uri
+                        DocumentsContract.moveDocument(context.contentResolver, sourceToMove, child.parentUri, permanentArchive)
+                            ?: throw IOException("SAF không di chuyển được bản gốc vào luu_tru")
+                        reservedArchiveNames += targetName
+                        archived++
+                        archivedOriginals++
+                    } catch (e: Throwable) {
+                        errors += "${child.name}: ${e.localizedMessage ?: "không thể lưu bản gốc vào luu_tru"}"
+                    }
+                }
+            } catch (e: Throwable) {
+                errors += "Không tạo được thư mục luu_tru: ${e.localizedMessage ?: "lỗi"}"
             }
         }
 
