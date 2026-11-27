@@ -70,7 +70,6 @@ private fun StudioApp() {
     var lastCaptureTime by remember { mutableStateOf(studioPrefs.getLong("last_capture_time", 0L)) }
     var movedVideos by remember { mutableStateOf<List<StudioVideo>>(emptyList()) }
     var status by remember { mutableStateOf("Chọn video DJI trên điện thoại và thư mục lưu Studio để bắt đầu.") }
-    var orientationReport by remember { mutableStateOf<MediaOrientationReport?>(null) }
     var orientationScanMessage by remember { mutableStateOf("") }
     var scanningOrientation by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
@@ -432,13 +431,34 @@ private fun StudioApp() {
                                         Toast.makeText(context, "Chọn buổi quay trước.", Toast.LENGTH_SHORT).show()
                                     } else {
                                         scanningOrientation = true
-                                        orientationReport = null
                                         orientationScanMessage = "Đang quét metadata video trong buổi quay…"
                                         scope.launch {
                                             try {
                                                 val report = MediaOrientationScanner.scan(context, folder)
-                                                orientationReport = report
-                                                orientationScanMessage = report.summary()
+                                                orientationScanMessage = buildString {
+                                                    appendLine("KẾT QUẢ QUÉT: ${report.total} VIDEO")
+                                                    appendLine("HƯỚNG CHÍNH: ${when (report.dominantLandscape) { true -> "NGANG"; false -> "DỌC"; null -> "CHƯA XÁC ĐỊNH" }}")
+                                                    appendLine("Ngang: ${report.landscapeCount} | Dọc: ${report.portraitCount} | Không xác định: ${report.unknownCount}")
+                                                    if (report.outliers.isNotEmpty()) {
+                                                        appendLine()
+                                                        appendLine("CLIP CÓ DẤU HIỆU KHÁC BIỆT (${report.outliers.size}):")
+                                                        report.outliers.take(30).forEach { item ->
+                                                            appendLine("• ${item.name} — ${item.note}")
+                                                        }
+                                                        if (report.outliers.size > 30) appendLine("… và ${report.outliers.size - 30} clip khác.")
+                                                    } else if (report.unknownCount == 0) {
+                                                        appendLine("Không phát hiện clip lệch hướng qua metadata.")
+                                                    }
+                                                    if (report.unknownCount > 0) {
+                                                        appendLine()
+                                                        appendLine("CLIP KHÔNG ĐỌC ĐƯỢC HƯỚNG:")
+                                                        report.items.filter { it.effectiveLandscape == null }.take(20).forEach { item ->
+                                                            appendLine("• ${item.name} — ${item.note}")
+                                                        }
+                                                        if (report.unknownCount > 20) appendLine("… và ${report.unknownCount - 20} clip khác.")
+                                                    }
+                                                }
+                                                status = orientationScanMessage
                                             } catch (error: Throwable) {
                                                 val reason = error.localizedMessage ?: error.javaClass.simpleName
                                                 orientationScanMessage = "QUÉT HƯỚNG VIDEO THẤT BẠI: $reason"
@@ -452,65 +472,15 @@ private fun StudioApp() {
                                     modifier = Modifier.fillMaxWidth()) {
                                     Text(if (scanningOrientation) "Đang quét metadata…" else "Quét hướng video của buổi quay")
                                 }
-                                if (orientationReport == null && orientationScanMessage.isNotBlank()) {
+                                if (orientationScanMessage.isNotBlank()) {
                                     Text(
-                                        orientationScanMessage,
-                                        modifier = Modifier.fillMaxWidth().background(
-                                            MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp)
-                                        ).padding(12.dp),
+                                        text = orientationScanMessage,
+                                        modifier = Modifier.fillMaxWidth()
+                                            .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(12.dp))
+                                            .padding(12.dp),
                                         color = MaterialTheme.colorScheme.onSurface,
                                         style = MaterialTheme.typography.bodyMedium
                                     )
-                                }
-                                orientationReport?.let { report ->
-                                    Column(
-                                        Modifier.fillMaxWidth()
-                                            .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(12.dp))
-                                            .padding(12.dp),
-                                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                            Text(
-                                                "KẾT QUẢ QUÉT: ${report.total} VIDEO",
-                                                fontWeight = FontWeight.Bold,
-                                                style = MaterialTheme.typography.titleSmall,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                            Text(
-                                                "HƯỚNG CHÍNH: ${when (report.dominantLandscape) { true -> "NGANG"; false -> "DỌC"; null -> "CHƯA XÁC ĐỊNH" }}",
-                                                fontWeight = FontWeight.Bold,
-                                                style = MaterialTheme.typography.titleMedium,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                            Text(
-                                                "Ngang: ${report.landscapeCount}  |  Dọc: ${report.portraitCount}  |  Không xác định: ${report.unknownCount}",
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                    }
-                                    if (report.dominantLandscape == null) {
-                                        Text("Chưa đọc được kích thước khung hình từ metadata. Không thể kết luận hướng video trong lượt quét này.",
-                                            color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                                    }
-                                    if (report.outliers.isNotEmpty()) {
-                                        Text("CLIP CÓ DẤU HIỆU KHÁC BIỆT (${report.outliers.size}):", fontWeight = FontWeight.SemiBold)
-                                        report.outliers.forEach { item ->
-                                            val size = if (item.width != null && item.height != null) "${item.width}×${item.height}" else "không rõ kích thước"
-                                            val rotation = item.rotationDegrees?.let { "rotation ${it}°" } ?: "rotation không đọc được"
-                                            Text("• ${item.name} — $rotation — $size — ${item.note}",
-                                                style = MaterialTheme.typography.bodySmall)
-                                        }
-                                    } else if (report.unknownCount == 0) {
-                                        Text("Không phát hiện clip lệch hướng qua metadata.")
-                                    }
-                                    if (report.unknownCount > 0) {
-                                        Text("CLIP KHÔNG ĐỌC ĐƯỢC HƯỚNG (${report.unknownCount}):", fontWeight = FontWeight.SemiBold)
-                                        report.items.filter { it.effectiveLandscape == null }.take(30).forEach { item ->
-                                            Text("• ${item.name} — ${item.note}", style = MaterialTheme.typography.bodySmall)
-                                        }
-                                        if (report.unknownCount > 30) Text("… và ${report.unknownCount - 30} clip khác.")
-                                    }
-                                    Text("Lưu ý: quét metadata không nhận ra video bị lộn ngược trong chính hình ảnh nếu file không có rotation tag (ví dụ pixel đã đảo nhưng metadata = 0°).",
-                                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                         }
